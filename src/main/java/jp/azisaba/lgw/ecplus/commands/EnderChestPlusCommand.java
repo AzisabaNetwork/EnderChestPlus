@@ -8,6 +8,7 @@ import java.util.stream.Stream;
 import jp.azisaba.lgw.ecplus.EnderChestPlus;
 import jp.azisaba.lgw.ecplus.InventoryData;
 import jp.azisaba.lgw.ecplus.InventoryLoader;
+import jp.azisaba.lgw.ecplus.listeners.InventoryOpenListener;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import jp.azisaba.lgw.ecplus.utils.UUIDUtils;
 import lombok.RequiredArgsConstructor;
@@ -58,17 +59,8 @@ public class EnderChestPlusCommand implements CommandExecutor {
         } else if (args[0].equalsIgnoreCase("openingPlayer")) {
             List<String> playerNames = Bukkit.getOnlinePlayers().stream()
                     .filter(player -> {
-                        InventoryView inv = player.getOpenInventory();
-                        if (inv == null) {
-                            return false;
-                        }
-                        if (inv.getTopInventory() == null) {
-                            return false;
-                        }
-                        if (inv.getTopInventory().getTitle() == null) {
-                            return false;
-                        }
-                        return inv.getTopInventory().getTitle().startsWith(EnderChestPlus.enderChestTitlePrefix);
+                        String inv = InventoryOpenListener.getPlayerOpenInventoryTitle(player);
+                        return inv.startsWith(EnderChestPlus.enderChestTitlePrefix);
                     }).map(Player::getName)
                     .collect(Collectors.toList());
 
@@ -153,17 +145,8 @@ public class EnderChestPlusCommand implements CommandExecutor {
                             if (player == null) {
                                 return false;
                             }
-                            InventoryView inv = player.getOpenInventory();
-                            if (inv == null) {
-                                return false;
-                            }
-                            if (inv.getTopInventory() == null) {
-                                return false;
-                            }
-                            if (inv.getTopInventory().getTitle() == null) {
-                                return false;
-                            }
-                            return inv.getTopInventory().getTitle()
+                            String inv = InventoryOpenListener.getPlayerOpenInventoryTitle(player);
+                            return inv
                                 .startsWith(EnderChestPlus.enderChestTitlePrefix);
                         });
 

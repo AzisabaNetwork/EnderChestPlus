@@ -53,9 +53,9 @@ public class InventoryLoader {
 
     public static Inventory getBuyInventory(int page) {
         Inventory inv = Bukkit.createInventory(null, 9 * 1, Chat.f("{0}&a - &cUnlock Page {1}", EnderChestPlus.enderChestTitlePrefix, page + 1));
-        ItemStack confirm = ItemHelper.createItem(Material.STAINED_GLASS_PANE, 5, Chat.f("&a確定"));
-        ItemStack cancel = ItemHelper.createItem(Material.STAINED_GLASS_PANE, 14, Chat.f("&cキャンセル"));
-        ItemStack sign = ItemHelper.createItem(Material.SIGN, 0, Chat.f("&aページ&e{0}&aを購入しますか？", page + 1));
+        ItemStack confirm = ItemHelper.createItem(Material.LIME_STAINED_GLASS_PANE, 5, Chat.f("&a確定"));
+        ItemStack cancel = ItemHelper.createItem(Material.RED_STAINED_GLASS_PANE, 14, Chat.f("&cキャンセル"));
+        ItemStack sign = ItemHelper.createItem(Material.OAK_SIGN, 0, Chat.f("&aページ&e{0}&aを購入しますか？", page + 1));
 
         inv.setItem(0, cancel);
         inv.setItem(1, cancel);
@@ -71,37 +71,23 @@ public class InventoryLoader {
     }
 
     public static ItemStack getBuyPane(int page) {
-        ItemStack buyPane = ItemHelper.createItem(Material.STAINED_GLASS_PANE, 15, Chat.f("&eクリックでページ&a{0}&eを購入する", page + 1));
+        ItemStack buyPane = ItemHelper.createItem(Material.BLACK_STAINED_GLASS_PANE, 15, Chat.f("&eクリックでページ&a{0}&eを購入する", page + 1));
 
         List<String> lore = new ArrayList<>(Arrays.asList(Chat.f("&6解禁コスト&a:")));
         if (0 <= page && page < 18) {
             lore.add(Chat.f("&7  - &cなし"));
         } else if (18 <= page && page < 27) {
-            lore.add(Chat.f("&7  - &a&lエメラルドブロック&7x32"));
+            lore.add(Chat.f("&7  - &a&l500$"));
         } else if (27 <= page && page < 36) {
-            lore.add(Chat.f("&7  - &a&lエメラルドブロック&7x64"));
+            lore.add(Chat.f("&7  - &a&l1000$"));
         } else if (36 <= page && page < 45) {
-            lore.add(Chat.f("&7  - &a&lエメラルドブロック&7x64"));
-            lore.add(Chat.f("&7  - &b&lダイヤモンドブロック&7x10"));
+            lore.add(Chat.f("&7  - &a&l1500$"));
         } else if (45 <= page && page < 54) {
-            lore.add(Chat.f("&7  - &b&lダイヤモンドブロック&7x32"));
+            lore.add(Chat.f("&7  - &a&l2000$"));
         } else if (54 <= page && page < 81) {
-            lore.add(Chat.f("&7  - &b&lダイヤモンドブロック&7x64"));
+            lore.add(Chat.f("&7  - &a&l2500$"));
         } else if (81 <= page) {
-            int mainPageNum = ((page) / (9 * 6)) + 1;
-            boolean isBottomThreeLine = page % (9 * 6) >= (9 * 3);
-
-            int emeraldAmount = ((mainPageNum - 1) * 64);
-            String emeraldAmountStr = "x" + emeraldAmount + " ( " + (emeraldAmount / 64) + "st )";
-
-            int diamondAmount = (mainPageNum - 2) * 64;
-            if (isBottomThreeLine) {
-                diamondAmount += 64;
-            }
-            String diamondAmountStr = "x" + diamondAmount + " ( " + (diamondAmount / 64) + "st )";
-
-            lore.add(Chat.f("&7  - &a&lエメラルドブロック&7{0}", emeraldAmountStr));
-            lore.add(Chat.f("&7  - &b&lダイヤモンドブロック&7{0}", diamondAmountStr));
+            lore.add(Chat.f("&7  - &a&l3000$"));
         }
 
         ItemHelper.setLore(buyPane, lore);
@@ -111,21 +97,21 @@ public class InventoryLoader {
 
     public static ItemStack getLowPane() {
         if (lowPane == null) {
-            lowPane = new ItemStack(Material.STAINED_GLASS_PANE, 1, (byte) 5);
+            lowPane = new ItemStack(Material.LIME_STAINED_GLASS_PANE, 1, (byte) 5);
         }
         return lowPane;
     }
 
     public static ItemStack getMidiumPane() {
         if (midiumPane == null) {
-            midiumPane = new ItemStack(Material.STAINED_GLASS_PANE, 1, (byte) 4);
+            midiumPane = new ItemStack(Material.YELLOW_STAINED_GLASS_PANE, 1, (byte) 4);
         }
         return midiumPane;
     }
 
     public static ItemStack getHighPane() {
         if (highPane == null) {
-            highPane = new ItemStack(Material.STAINED_GLASS_PANE, 1, (byte) 14);
+            highPane = new ItemStack(Material.RED_STAINED_GLASS_PANE, 1, (byte) 14);
         }
         return highPane;
     }

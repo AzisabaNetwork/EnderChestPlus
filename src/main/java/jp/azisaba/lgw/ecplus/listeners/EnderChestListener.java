@@ -82,8 +82,9 @@ public class EnderChestListener implements Listener {
         ItemStack item = e.getCurrentItem();
         Inventory inv = e.getInventory();
         Inventory clickedInv = e.getClickedInventory();
+        String invname = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
 
-        if (!inv.getTitle().startsWith(EnderChestPlus.mainEnderChestTitle)) {
+        if (!invname.startsWith(EnderChestPlus.mainEnderChestTitle)) {
             return;
         }
 
@@ -117,7 +118,7 @@ public class EnderChestListener implements Listener {
                 data = loader.getInventoryData(p);
             }
             p.openInventory(data.getInventory(invNum - 1));
-            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_HAT, 1, 1);
+            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
     }
 
@@ -129,11 +130,12 @@ public class EnderChestListener implements Listener {
         Player p = (Player) e.getWhoClicked();
         Inventory inv = e.getInventory();
         Inventory clickedInv = e.getClickedInventory();
+        String invname = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
 
-        if (inv.getTitle().startsWith(EnderChestPlus.mainEnderChestTitle)) {
+        if (invname.startsWith(EnderChestPlus.mainEnderChestTitle)) {
             return;
         }
-        if (!inv.getTitle().startsWith(EnderChestPlus.enderChestTitlePrefix)) {
+        if (!invname.startsWith(EnderChestPlus.enderChestTitlePrefix)) {
             return;
         }
         if (e.getClick() != ClickType.MIDDLE) {
@@ -146,7 +148,7 @@ public class EnderChestListener implements Listener {
             return;
         }
 
-        String title = inv.getTitle();
+        String title = invname;
         int currentInventory = Integer.parseInt(title.substring(title.indexOf("Page") + 5)) - 1;
         int mainInventoryIndex = currentInventory / 54;
 
@@ -160,7 +162,7 @@ public class EnderChestListener implements Listener {
             }
             Inventory mainInv = InventoryLoader.getMainInventory(data, mainInventoryIndex);
             p.openInventory(mainInv);
-            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_HAT, 1, 1);
+            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
     }
 
@@ -172,8 +174,9 @@ public class EnderChestListener implements Listener {
         Player p = (Player) e.getWhoClicked();
         Inventory inv = e.getInventory();
         Inventory clickedInv = e.getClickedInventory();
+        String invname = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
 
-        if (!inv.getTitle().startsWith(EnderChestPlus.mainEnderChestTitle)) {
+        if (!invname.startsWith(EnderChestPlus.mainEnderChestTitle)) {
             return;
         }
         if (clickedInv != null) {
@@ -189,7 +192,7 @@ public class EnderChestListener implements Listener {
             return;
         }
 
-        String invTitle = inv.getTitle();
+        String invTitle = invname;
         int currentOpeningMainInventoryIndex = Integer.parseInt(invTitle.substring(invTitle.lastIndexOf(Chat.f("&a-")) + 6).trim()) - 1;
 
         if ((currentOpeningMainInventoryIndex == 0 && e.getClick() == ClickType.LEFT)
@@ -217,7 +220,7 @@ public class EnderChestListener implements Listener {
         Inventory nextOpenMainInv = InventoryLoader.getMainInventory(data, nextPageIndex);
         if (nextOpenMainInv != null) {
             p.openInventory(nextOpenMainInv);
-            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_HAT, 1, 1);
+            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         } else {
             p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
         }
@@ -231,11 +234,12 @@ public class EnderChestListener implements Listener {
         Player p = (Player) e.getWhoClicked();
         Inventory inv = e.getInventory();
         Inventory clickedInv = e.getClickedInventory();
+        String invname = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
 
-        if (inv.getTitle().startsWith(EnderChestPlus.mainEnderChestTitle)) {
+        if (invname.startsWith(EnderChestPlus.mainEnderChestTitle)) {
             return;
         }
-        if (!inv.getTitle().startsWith(EnderChestPlus.enderChestTitlePrefix)) {
+        if (!invname.startsWith(EnderChestPlus.enderChestTitlePrefix)) {
             return;
         }
         if (clickedInv != null) {
@@ -251,7 +255,7 @@ public class EnderChestListener implements Listener {
             return;
         }
 
-        String title = Chat.r(inv.getTitle());
+        String title = Chat.r(invname);
         int currentInventory = Integer.parseInt(title.substring(title.indexOf("Page") + 5, title.length())) - 1;
         int addNum = 1;
         if (e.getClick() == ClickType.LEFT) {
@@ -278,7 +282,7 @@ public class EnderChestListener implements Listener {
             return;
         }
         p.openInventory(nextInv);
-        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_HAT, 1, 1);
+        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
     }
 
     @EventHandler(priority = EventPriority.HIGH)
@@ -289,12 +293,12 @@ public class EnderChestListener implements Listener {
             return;
         }
 
-        Inventory inv = p.getOpenInventory().getTopInventory();
+        String invname = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
 
-        if (inv.getTitle().startsWith(EnderChestPlus.mainEnderChestTitle)) {
+        if (invname.startsWith(EnderChestPlus.mainEnderChestTitle)) {
             return;
         }
-        if (!inv.getTitle().startsWith(EnderChestPlus.enderChestTitlePrefix)) {
+        if (!invname.startsWith(EnderChestPlus.enderChestTitlePrefix)) {
             return;
         }
 

@@ -169,7 +169,7 @@ public class InventoryData {
             if (inv == null) {
                 continue;
             }
-            Inventory newInv = Bukkit.createInventory(null, inv.getSize(), inv.getName());
+            Inventory newInv = Bukkit.createInventory(null, inv.getSize());
 
             for (int index = 0; index < inv.getSize(); index++) {
                 ItemStack item = inv.getItem(index);

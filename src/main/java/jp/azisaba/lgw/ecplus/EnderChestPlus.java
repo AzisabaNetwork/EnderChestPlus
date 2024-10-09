@@ -5,16 +5,16 @@ import co.aikar.taskchain.TaskChain;
 import co.aikar.taskchain.TaskChainFactory;
 import jp.azisaba.lgw.ecplus.commands.EnderChestPlusCommand;
 import jp.azisaba.lgw.ecplus.commands.ReceiveDroppedCommand;
-import jp.azisaba.lgw.ecplus.listeners.BuyInventoryListener;
-import jp.azisaba.lgw.ecplus.listeners.DroppedItemListener;
-import jp.azisaba.lgw.ecplus.listeners.EnderChestListener;
-import jp.azisaba.lgw.ecplus.listeners.LoadInventoryDataListener;
+import jp.azisaba.lgw.ecplus.commands.ShortcutCommand;
+import jp.azisaba.lgw.ecplus.listeners.*;
 import jp.azisaba.lgw.ecplus.tasks.AutoSaveTask;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import lombok.Getter;
 import lombok.Setter;
+import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -49,6 +49,8 @@ public class EnderChestPlus extends JavaPlugin {
     public static <T> TaskChain<T> newSharedChain(String name) {
         return taskChainFactory.newSharedChain(name);
     }
+    @Getter
+    private static Economy economy = null;
 
     @Override
     public void onEnable() {
@@ -73,13 +75,22 @@ public class EnderChestPlus extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new LoadInventoryDataListener(loader), this);
         Bukkit.getPluginManager().registerEvents(new BuyInventoryListener(loader), this);
         Bukkit.getPluginManager().registerEvents(new DroppedItemListener(dropItemContainer), this);
+        Bukkit.getPluginManager().registerEvents(new InventoryOpenListener(), this);
 
         Bukkit.getPluginCommand("enderchestplus").setExecutor(new EnderChestPlusCommand(this, loader));
         Bukkit.getPluginCommand("enderchestplus").setPermissionMessage(Chat.f("{0}&c権限がありません！", config.chatPrefix));
         Bukkit.getPluginCommand("receivedropped").setExecutor(new ReceiveDroppedCommand(dropItemContainer));
         Bukkit.getPluginCommand("receivedropped").setPermissionMessage(Chat.f("{0}&c権限がありません！", config.chatPrefix));
+        Bukkit.getPluginCommand("ec").setExecutor(new ShortcutCommand(this, loader, dropItemContainer));
 
         Bukkit.getLogger().info(getName() + " enabled.");
+
+        //VaultAPI初期化
+        if (!setupEconomy()) {
+            getLogger().severe("Vaultのセットアップに失敗しました。");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
     }
 
     @Override
@@ -96,7 +107,7 @@ public class EnderChestPlus extends JavaPlugin {
             if (player.getOpenInventory().getTopInventory() == null) {
                 return;
             }
-            if (player.getOpenInventory().getTopInventory().getTitle().startsWith(enderChestTitlePrefix)) {
+            if (InventoryOpenListener.getPlayerOpenInventoryTitle(player).startsWith(enderChestTitlePrefix)) {
                 ItemStack item = player.getOpenInventory().getCursor();
                 if (item != null) {
                     boolean success = false;
@@ -127,6 +138,19 @@ public class EnderChestPlus extends JavaPlugin {
 
         Bukkit.getLogger().info(getName() + " disabled.");
     }
+
+    private boolean setupEconomy() {
+        if (getServer().getPluginManager().getPlugin("Vault") == null) {
+            return false;
+        }
+        RegisteredServiceProvider<Economy> rsp = getServer().getServicesManager().getRegistration(Economy.class);
+        if (rsp == null) {
+            return false;
+        }
+        economy = rsp.getProvider();
+        return economy != null;
+    }
+
 
     public void reloadPluginConfig() {
 

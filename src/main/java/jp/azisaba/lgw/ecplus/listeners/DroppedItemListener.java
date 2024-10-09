@@ -21,14 +21,19 @@ public class DroppedItemListener implements Listener {
             return;
         }
 
+
         Player p = (Player) e.getPlayer();
         Inventory inv = e.getInventory();
+        String inventoryName = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
+        if (inv.getHolder() instanceof  Player){
+            inventoryName = ((Player) inv.getHolder()).getName();
+        }
 
-        if (!inv.getName().startsWith(Chat.f("&aDropped Item &7-"))) {
+        if (!inventoryName.startsWith(Chat.f("&aDropped Item &7-"))) {
             return;
         }
 
-        String stripped = Chat.r(inv.getName());
+        String stripped = Chat.r(inventoryName);
         String id = stripped.substring(stripped.indexOf("-") + 2);
         DropItem itemData = dropItemContainer.getItemData(id);
 

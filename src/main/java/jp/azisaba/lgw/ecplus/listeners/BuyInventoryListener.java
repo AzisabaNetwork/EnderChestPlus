@@ -12,6 +12,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.UUID;
@@ -21,15 +22,18 @@ public class BuyInventoryListener implements Listener {
 
     private final InventoryLoader loader;
 
+    int money = 0;
+
     @EventHandler
     public void onClickedConfirmGUI(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player)) {
             return;
         }
 
+
         Player p = (Player) e.getWhoClicked();
         Inventory clicked = e.getClickedInventory();
-        Inventory opening = e.getInventory();
+        InventoryView opening = e.getView();
         ItemStack clickedItem = e.getCurrentItem();
 
         if (!opening.getTitle().startsWith(Chat.f("{0}&a - &cUnlock Page", EnderChestPlus.enderChestTitlePrefix))) {
@@ -38,9 +42,6 @@ public class BuyInventoryListener implements Listener {
 
         e.setCancelled(true);
 
-        if (clicked == null || !clicked.equals(opening) || clickedItem == null) {
-            return;
-        }
 
         int page;
         try {
@@ -50,7 +51,7 @@ public class BuyInventoryListener implements Listener {
             return;
         }
 
-        if (clickedItem.getType() == Material.SIGN) {
+        if (clickedItem.getType() == Material.OAK_SIGN) {
             return;
         }
         int data = getData(clickedItem);
@@ -70,10 +71,10 @@ public class BuyInventoryListener implements Listener {
                 data2.initializeInventory(page);
                 p.openInventory(InventoryLoader.getMainInventory(data2, openMainInventoryIndex));
 
-                p.sendMessage(Chat.f("&a購入に成功しました！"));
-                p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BELL, 2, 1);
+                p.sendMessage(Chat.f("&a購入に成功しました！ 現在の所持金:{0}$",EnderChestPlus.getEconomy().getBalance(p)));
+                p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 2, 1);
             } else {
-                p.sendMessage(Chat.f("&c購入するためのアイテムが足りません！"));
+                p.sendMessage(Chat.f("&c購入するためのお金が{0}$足りません！",money-EnderChestPlus.getEconomy().getBalance(p)));
                 p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
                 p.closeInventory();
             }
@@ -86,7 +87,7 @@ public class BuyInventoryListener implements Listener {
                 data2 = loader.getInventoryData(p);
             }
             p.openInventory(InventoryLoader.getMainInventory(data2, openMainInventoryIndex));
-            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_HAT, 1, 1);
+            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
         return;
     }
@@ -106,67 +107,22 @@ public class BuyInventoryListener implements Listener {
             return true;
         }
 
-        int emeraldBlockNorma = 0;
-        int diamondBlockNorma = 0;
-
         if (line == 3) {
-            emeraldBlockNorma = 32;
+            money = 500;
         } else if (line == 4) {
-            emeraldBlockNorma = 64;
+            money = 1000;
         } else if (line == 5) {
-            emeraldBlockNorma = 64;
-            diamondBlockNorma = 10;
+            money = 1500;
         } else if (line == 6) {
-            diamondBlockNorma = 32;
+            money = 2000;
         } else if (line <= 9) {
-            diamondBlockNorma = 64;
+            money = 2500;
         } else {
-            int mainPageNum = (line - 1) / 6 + 1;
-            boolean isBottomThreeLine = (line - 1) % 6 >= 3;
-
-            emeraldBlockNorma = (mainPageNum - 1) * 64;
-            diamondBlockNorma = (mainPageNum - 2) * 64;
-            if (isBottomThreeLine) {
-                diamondBlockNorma += 64;
-            }
+            money = 3000;
         }
 
-        ItemStack[] contents = p.getInventory().getContents().clone();
-        for (int i = 0; i < 36; i++) {
-            ItemStack item = contents[i];
-            if (item == null) {
-                continue;
-            }
-
-            if (item.getType() == Material.DIAMOND_BLOCK) {
-                if (diamondBlockNorma <= 0) {
-                    continue;
-                }
-                if (item.getAmount() <= diamondBlockNorma) {
-                    contents[i] = null;
-                    diamondBlockNorma -= item.getAmount();
-                } else {
-                    item.setAmount(item.getAmount() - diamondBlockNorma);
-                    contents[i] = item;
-                    diamondBlockNorma = 0;
-                }
-            } else if (item.getType() == Material.EMERALD_BLOCK) {
-                if (emeraldBlockNorma <= 0) {
-                    continue;
-                }
-                if (item.getAmount() <= emeraldBlockNorma) {
-                    contents[i] = null;
-                    emeraldBlockNorma -= item.getAmount();
-                } else {
-                    item.setAmount(item.getAmount() - emeraldBlockNorma);
-                    contents[i] = item;
-                    emeraldBlockNorma = 0;
-                }
-            }
-        }
-
-        if (emeraldBlockNorma <= 0 && diamondBlockNorma <= 0) {
-            p.getInventory().setContents(contents);
+        if (EnderChestPlus.getEconomy().has(p,money)){
+            EnderChestPlus.getEconomy().withdrawPlayer(p,money);
             return true;
         }
         return false;

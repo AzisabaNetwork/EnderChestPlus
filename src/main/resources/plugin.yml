@@ -1,8 +1,9 @@
-name: ${project.name}
+name: EnderChestPlus
 main: jp.azisaba.lgw.ecplus.EnderChestPlus
 version: ${project.version}
 author: siloneco
 description: ${project.description}
+api-version: 1.16
 commands:
   enderchestplus:
     permission: enderchestplus.command.enderchestplus
@@ -10,6 +11,9 @@ commands:
   receivedropped:
     usage: /{LABEL}
     permission: enderchestplus.command.receivedropped
+  ec:
+    description: Opens the ender chest
+    usage: /ec
 permissions:
   enderchestplus.command.enderchestplus:
     default: op
