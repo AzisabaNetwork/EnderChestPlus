@@ -3,7 +3,9 @@ main: jp.azisaba.lgw.ecplus.EnderChestPlus
 version: ${project.version}
 author: siloneco
 description: ${project.description}
-api-version: 1.16
+api-version: 1.15
+depend:
+  - Vault
 commands:
   enderchestplus:
     permission: enderchestplus.command.enderchestplus
@@ -11,9 +13,9 @@ commands:
   receivedropped:
     usage: /{LABEL}
     permission: enderchestplus.command.receivedropped
-  ec:
+  ec2:
     description: Opens the ender chest
-    usage: /ec
+    usage: /ec2
 permissions:
   enderchestplus.command.enderchestplus:
     default: op

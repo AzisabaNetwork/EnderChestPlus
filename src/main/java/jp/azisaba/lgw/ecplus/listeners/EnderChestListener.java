@@ -1,26 +1,19 @@
 package jp.azisaba.lgw.ecplus.listeners;
 
-import com.google.common.base.Strings;
 import jp.azisaba.lgw.ecplus.DropItemContainer;
 import jp.azisaba.lgw.ecplus.EnderChestPlus;
 import jp.azisaba.lgw.ecplus.InventoryData;
 import jp.azisaba.lgw.ecplus.InventoryLoader;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import lombok.RequiredArgsConstructor;
-import me.rayzr522.jsonmessage.JSONMessage;
 import org.bukkit.Material;
 import org.bukkit.Sound;
-import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
-import org.bukkit.event.player.PlayerDropItemEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -33,44 +26,6 @@ public class EnderChestListener implements Listener {
     private final EnderChestPlus plugin;
     private final InventoryLoader loader;
     private final DropItemContainer dropItemContainer;
-
-    @EventHandler
-    public void onClickEnderChest(PlayerInteractEvent e) {
-        Player p = e.getPlayer();
-        if (e.getAction() != Action.RIGHT_CLICK_BLOCK) {
-            return;
-        }
-        Block b = e.getClickedBlock();
-
-        if (b.getType() != Material.ENDER_CHEST) {
-            return;
-        }
-
-        e.setCancelled(true);
-
-        if (!plugin.isAllowOpenEnderChest()) {
-            p.sendMessage(Chat.f("&c現在エンダーチェストは無効化されています。運営が再度有効化するまでお待ちください。"));
-            if (p.hasPermission("enderchestplus.command.enderchestplus")) {
-                p.sendMessage(Chat.f("&eあなたは運営なので、&c/ecp enable &eで解除することができます。\n他の運営がエンチェスのメンテナンスをしていないか確認してから実行してください。"));
-            }
-            return;
-        }
-
-        if (loader.getLookingAt(p) != null) {
-            loader.setLookingAt(p, null);
-        }
-
-        InventoryData data = loader.getInventoryData(p);
-
-        // nullの場合は読み込み待ち
-        if (data == null) {
-            p.sendMessage(Chat.f("&c現在プレイヤーデータのロード中です。しばらくお待ちください..."));
-            return;
-        }
-
-        Inventory inv = InventoryLoader.getMainInventory(data, 0);
-        p.openInventory(inv);
-    }
 
     @SuppressWarnings("deprecation")
     @EventHandler
@@ -283,66 +238,6 @@ public class EnderChestListener implements Listener {
         }
         p.openInventory(nextInv);
         p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
-    }
-
-    @EventHandler(priority = EventPriority.HIGH)
-    public void onDropItem(PlayerDropItemEvent e) {
-        Player p = e.getPlayer();
-
-        if (p.getOpenInventory() == null || p.getOpenInventory().getTopInventory() == null) {
-            return;
-        }
-
-        String invname = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
-
-        if (invname.startsWith(EnderChestPlus.mainEnderChestTitle)) {
-            return;
-        }
-        if (!invname.startsWith(EnderChestPlus.enderChestTitlePrefix)) {
-            return;
-        }
-
-        e.setCancelled(true);
-
-        ItemStack item = e.getItemDrop().getItemStack().clone();
-        InventoryData data = loader.getInventoryData(p);
-
-        if (canGetItem(p, item)) {
-            return;
-        }
-
-        int page = data.addItemInEmptySlot(item);
-
-        if (page >= 0) {
-            p.sendMessage(Chat.f("&cインベントリに空きがないのでエンダーチェストの &a{0}ページ &cにアイテムを追加しました。", page + 1));
-            return;
-        } else {
-
-            String id = dropItemContainer.addItem(p, item);
-
-            JSONMessage msg = JSONMessage.create();
-
-            msg.then(Chat.f("&a{0}", Strings.repeat("=", 35))).newline();
-            msg.newline();
-            msg.then(Chat.f("&eアイテム&a: &r{0}", item.getType().toString())).newline();
-
-            if (item.hasItemMeta() && item.getItemMeta().hasDisplayName()) {
-                msg.then(Chat.f("&e名前&a: &r{0}", item.getItemMeta().getDisplayName())).newline();
-            }
-
-            msg.then(Chat.f("&e個数&a: &r{0}個", item.getAmount())).newline();
-            msg.newline();
-            msg.then(Chat.f("{0}&c&l[ここをクリックで受け取りGUIを開く]", Strings.repeat(" ", 5))).runCommand("/enderchestplus:receivedropped " + id).newline();
-            msg.newline();
-            msg.then(Chat.f("&a{0}", Strings.repeat("=", 35)));
-
-            p.sendMessage(Chat.f("&c[警告] &eエンダーチェストにもインベントリにもアイテムが入らなかったので、アイテムが消滅しました。"));
-            p.sendMessage(Chat.f("&c[警告] &e以下、&aアイテム情報&eと&a受け取りボタン&eです。"));
-            msg.send(p);
-
-            p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
-            return;
-        }
     }
 
     @EventHandler
