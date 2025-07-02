@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+
+jobs:
+  # ビルドとリリースまでの処理
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cache Maven packages    # ←この行追加
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+      
+      - name: Setup JDK #JDKセットアップ
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'corretto'
+          java-version: '16'
+
+      - name: Build with Maven
+        run: mvn -B package --file pom.xml
+
+      - name: Collect Releases #リリースしたものを収集
+        run: |
+          mkdir release
+          cp target/*.jar release/
+          
+
+      - name: Upload Artifact #アーティファクトをアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: releases
+          path: release/*
+
+      - name: ${{ github.ref_name }}リリース #GiHubにリリース
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
