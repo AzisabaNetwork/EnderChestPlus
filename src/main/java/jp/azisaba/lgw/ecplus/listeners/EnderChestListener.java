@@ -94,7 +94,7 @@ public class EnderChestListener implements Listener {
             return;
         }
 
-        if (item.getData().getData() == (byte) 15) {
+        if (item.getType() == Material.BLACK_STAINED_GLASS_PANE) {
             String pageNumStr = Chat.r(item.getItemMeta().getDisplayName());
             pageNumStr = pageNumStr.substring(8, pageNumStr.indexOf("を購入する"));
             int pageNum = Integer.parseInt(pageNumStr);

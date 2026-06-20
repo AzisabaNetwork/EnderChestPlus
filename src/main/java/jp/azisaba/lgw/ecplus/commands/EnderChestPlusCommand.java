@@ -12,8 +12,6 @@ import jp.azisaba.lgw.ecplus.listeners.InventoryOpenListener;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import jp.azisaba.lgw.ecplus.utils.UUIDUtils;
 import lombok.RequiredArgsConstructor;
-import me.kbrewster.exceptions.APIException;
-import me.kbrewster.exceptions.InvalidPlayerException;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -87,10 +85,8 @@ public class EnderChestPlusCommand implements CommandExecutor {
                 .asyncFirst(() -> {
                     try {
                         return UUIDUtils.getUUID(args[1]);
-                    } catch (APIException e) {
-                        p.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(MojangAPIのレートリミット)"));
-                    } catch (InvalidPlayerException e) {
-                        p.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(そのMCIDのプレイヤーは存在しません)"));
+                    } catch (IOException e) {
+                        p.sendMessage(Chat.f("&cUUIDの取得に失敗しました。({0})", e.getMessage()));
                     } catch (Exception e) {
                         String className = e.getClass().getName();
                         if (className.contains(".")) {
@@ -123,14 +119,8 @@ public class EnderChestPlusCommand implements CommandExecutor {
                     try {
                         from = UUIDUtils.getUUID(args[1]);
                         to = UUIDUtils.getUUID(args[2]);
-                    } catch (APIException e) {
-                        sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(MojangAPIのレートリミット)"));
-                        return;
                     } catch (IOException e) {
-                        sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(不明なエラー)"));
-                        return;
-                    } catch (InvalidPlayerException e) {
-                        sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(不明なプレイヤー)"));
+                        sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。({0})", e.getMessage()));
                         return;
                     }
 

@@ -54,10 +54,9 @@ public class BuyInventoryListener implements Listener {
         if (clickedItem.getType() == Material.OAK_SIGN) {
             return;
         }
-        int data = getData(clickedItem);
         int openMainInventoryIndex = page / 54;
 
-        if (data == 5) {
+        if (clickedItem.getType() == Material.LIME_STAINED_GLASS_PANE) {
             boolean success = costPlayer(p, page);
 
             if (success) {
@@ -78,7 +77,7 @@ public class BuyInventoryListener implements Listener {
                 p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
                 p.closeInventory();
             }
-        } else if (data == 14) {
+        } else if (clickedItem.getType() == Material.RED_STAINED_GLASS_PANE) {
             UUID looking = loader.getLookingAt(p);
             InventoryData data2;
             if (looking != null) {
@@ -90,11 +89,6 @@ public class BuyInventoryListener implements Listener {
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
         return;
-    }
-
-    @SuppressWarnings("deprecation")
-    private int getData(ItemStack item) {
-        return item.getData().getData();
     }
 
     private boolean costPlayer(Player p, int page) {

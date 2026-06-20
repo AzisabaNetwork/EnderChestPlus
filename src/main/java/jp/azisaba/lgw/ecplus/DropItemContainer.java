@@ -3,7 +3,6 @@ package jp.azisaba.lgw.ecplus;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang.RandomStringUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -12,22 +11,34 @@ import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
 import java.io.IOException;
+import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.UUID;
 
 @RequiredArgsConstructor
 public class DropItemContainer {
 
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
     private final EnderChestPlus plugin;
 
     private final HashMap<String, DropItem> items = new HashMap<>();
     private final HashMap<String, Inventory> inventories = new HashMap<>();
 
+    private static String randomAlphabetic(int length) {
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            sb.append(ID_CHARS.charAt(RANDOM.nextInt(ID_CHARS.length())));
+        }
+        return sb.toString();
+    }
+
     public String addItem(Player p, ItemStack item) {
 
-        String id = RandomStringUtils.randomAlphabetic(8);
+        String id = randomAlphabetic(8);
         while (items.containsKey(id)) {
-            id = RandomStringUtils.randomAlphabetic(8);
+            id = randomAlphabetic(8);
         }
 
         DropItem itemData = new DropItem(p.getUniqueId(), item);

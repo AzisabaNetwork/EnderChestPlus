@@ -1,6 +1,8 @@
 package jp.azisaba.lgw.ecplus.utils;
 
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
@@ -49,7 +51,10 @@ public class ItemHelper {
 
     public static void addHideEnchant(ItemStack item) {
         ItemMeta meta = item.getItemMeta();
-        meta.addEnchant(Enchantment.DURABILITY, 1, true);
+        Enchantment unbreaking = Registry.ENCHANTMENT.get(NamespacedKey.minecraft("unbreaking"));
+        if (unbreaking != null) {
+            meta.addEnchant(unbreaking, 1, true);
+        }
         meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
         item.setItemMeta(meta);
     }
@@ -67,12 +72,7 @@ public class ItemHelper {
     }
 
     private static ItemStack getItemStackWithoutWarning(Material material, int data) {
-        try {
-            return ItemStack.class.getConstructor(Material.class, int.class, short.class).newInstance(material, 1,
-                    (short) data);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
+        // In 1.13+, damage/data values are separate Materials; the 'data' param is ignored.
+        return new ItemStack(material);
     }
 }

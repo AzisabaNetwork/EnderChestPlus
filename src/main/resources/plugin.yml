@@ -3,11 +3,11 @@ main: jp.azisaba.lgw.ecplus.EnderChestPlus
 version: ${project.version}
 author: siloneco
 description: ${project.description}
-api-version: 1.16
+api-version: 1.21
 commands:
   enderchestplus:
     permission: enderchestplus.command.enderchestplus
-    aliases: [ ecp ]
+    aliases: [ecp]
   receivedropped:
     usage: /{LABEL}
     permission: enderchestplus.command.receivedropped
