@@ -1,9 +1,9 @@
 name: EnderChestPlus
 main: jp.azisaba.lgw.ecplus.EnderChestPlus
-version: ${project.version}
+version: ${version}
 author: siloneco
-description: ${project.description}
-api-version: 1.15
+description: ${description}
+api-version: '1.21'
 depend:
   - Vault
 commands:

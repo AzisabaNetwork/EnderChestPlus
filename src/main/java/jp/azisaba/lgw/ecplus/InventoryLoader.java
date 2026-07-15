@@ -16,6 +16,7 @@ public class InventoryLoader {
 
     private static ItemStack lowPane = null, midiumPane = null, highPane = null;
     private final EnderChestPlus plugin;
+    private final DatabaseManager database;
     private final HashMap<UUID, InventoryData> invs = new HashMap<>();
     private final HashMap<Player, UUID> adminLookingAt = new HashMap<>();
 
@@ -165,7 +166,7 @@ public class InventoryLoader {
 
     public void loadInventoryData(UUID uuid) {
         if (!invs.containsKey(uuid)) {
-            InventoryData data = new InventoryData(uuid);
+            InventoryData data = new InventoryData(uuid, database);
 
             // 非同期で実行されていた場合に ConcurrentModificationException の発生を防ぐ
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -204,6 +205,14 @@ public class InventoryLoader {
         }
 
         return count;
+    }
+
+    public boolean saveAndUnload(UUID uuid) {
+        InventoryData data = invs.get(uuid);
+        if (data == null) return false;
+        boolean saved = data.save(false);
+        if (saved) invs.remove(uuid);
+        return saved;
     }
 
     public void setLookingAt(Player p, UUID uuid) {

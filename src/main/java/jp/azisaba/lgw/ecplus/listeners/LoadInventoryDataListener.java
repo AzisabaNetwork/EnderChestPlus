@@ -7,6 +7,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 
 @RequiredArgsConstructor
 public class LoadInventoryDataListener implements Listener {
@@ -20,6 +21,13 @@ public class LoadInventoryDataListener implements Listener {
         // 非同期で読み込みを行う
         EnderChestPlus.newChain()
                 .async(() -> loader.loadInventoryData(p))
+                .execute();
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        EnderChestPlus.newChain()
+                .async(() -> loader.saveAndUnload(event.getPlayer().getUniqueId()))
                 .execute();
     }
 }

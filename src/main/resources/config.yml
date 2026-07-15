@@ -1,0 +1,22 @@
+# EnderChestPlus configuration
+Chat:
+  Prefix: "&3[&6EC&b+&3] "
+
+MySQL:
+  Host: "127.0.0.1"
+  Port: 3306
+  Database: "enderchestplus"
+  Username: "enderchestplus"
+  Password: "change-me"
+
+  # 作成されるテーブル名は <TablePrefix>inventories です。
+  # 英数字とアンダースコアのみ使用できます。
+  TablePrefix: "ecplus_"
+
+  # 各Minecraftサーバーごとの最大接続数です。
+  PoolSize: 5
+  ConnectionTimeoutMillis: 10000
+
+  # DBが別ホストの場合はSSLの有効化を推奨します。
+  UseSSL: false
+  VerifyServerCertificate: true

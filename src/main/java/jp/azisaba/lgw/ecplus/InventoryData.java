@@ -4,192 +4,142 @@ import jp.azisaba.lgw.ecplus.utils.Chat;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.io.BukkitObjectInputStream;
+import org.bukkit.util.io.BukkitObjectOutputStream;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 public class InventoryData {
+    private final Map<Integer, Inventory> inventories = new HashMap<>();
+    private final UUID uuid;
+    private final DatabaseManager database;
 
-    private final HashMap<Integer, Inventory> inventories = new HashMap<>();
-    private UUID uuid = null;
-
-    public InventoryData(Player p) {
-        this(p.getUniqueId(), true);
+    public InventoryData(UUID uuid, DatabaseManager database) {
+        this(uuid, database, true);
     }
 
-    public InventoryData(UUID uuid) {
-        this(uuid, true);
-    }
-
-    private InventoryData(UUID uuid, boolean load) {
+    private InventoryData(UUID uuid, DatabaseManager database, boolean load) {
         this.uuid = uuid;
-        if (load) {
-            load();
-        }
+        this.database = database;
+        if (load) load();
     }
 
     public int addItemInEmptySlot(ItemStack item) {
-
-        int page = -1;
-
         for (int i = 0; i < EnderChestPlus.MAX_MAIN_INVENTORY_PAGES * 54; i++) {
-            if (!inventories.containsKey(i)) {
-                continue;
+            Inventory inventory = inventories.get(i);
+            if (inventory == null) continue;
+            int slot = inventory.firstEmpty();
+            if (slot >= 0) {
+                inventory.setItem(slot, item);
+                return i;
             }
-
-            Inventory inv = inventories.get(i);
-
-            int slot = inv.firstEmpty();
-            if (slot < 0) {
-                continue;
-            }
-
-            inv.setItem(slot, item);
-            page = i;
-            break;
         }
-
-        return page;
+        return -1;
     }
 
     private void load() {
-        File file = new File(EnderChestPlus.getInventoryDataFile(), uuid.toString() + ".yml");
-        if (!file.exists()) {
-            return;
-        }
-
-        YamlConfiguration conf = YamlConfiguration.loadConfiguration(file);
-        if (conf.getConfigurationSection("") != null) {
-
-            for (String key : conf.getConfigurationSection("").getKeys(false)) {
-                int keyInt = isPositive(key);
-                if (keyInt < 0) {
-                    continue;
-                }
-
-                if (conf.getConfigurationSection(key) == null) {
-                    continue;
-                }
-
-                Inventory inv = Bukkit.createInventory(null, 9 * 6, Chat.f("{0} &e- &cPage {1}", EnderChestPlus.enderChestTitlePrefix, keyInt + 1));
-                for (String key2 : conf.getConfigurationSection(key).getKeys(false)) {
-                    ItemStack item = conf.getItemStack(key + "." + key2, null);
-                    if (item == null) {
-                        continue;
-                    }
-
-                    int key2Int = isPositive(key2);
-                    if (key2Int < 0) {
-                        continue;
-                    }
-
-                    inv.setItem(key2Int, item);
-                }
-
-                inventories.put(keyInt, inv);
+        try {
+            byte[] bytes = database.load(uuid);
+            if (bytes != null) {
+                deserialize(bytes);
+            } else if (loadLegacyYaml()) {
+                save(false);
             }
+        } catch (SQLException | IOException | ClassNotFoundException e) {
+            throw new IllegalStateException("Could not load inventory data for " + uuid, e);
         }
-
-        for (int i = 0; i < 18; i++) {
-
-            if (inventories.containsKey(i)) {
-                continue;
-            }
-
-            Inventory inv = Bukkit.createInventory(null, 6 * 9, Chat.f("{0} &e- &cPage {1}", EnderChestPlus.enderChestTitlePrefix, i + 1));
-            inventories.put(i, inv);
-        }
+        for (int i = 0; i < 18; i++) inventories.computeIfAbsent(i, this::createInventory);
     }
 
-    public boolean save(boolean asyncSave) {
-        File file = new File(EnderChestPlus.getInventoryDataFile(), uuid.toString() + ".yml");
-        YamlConfiguration conf = new YamlConfiguration();
-
-        for (int invNum : inventories.keySet()) {
-            Inventory inv = inventories.get(invNum);
-            boolean empty = true;
-
-            for (int i = 0; i < inv.getSize(); i++) {
-                ItemStack item = inv.getItem(i);
-                if (item == null || item.getType() == Material.AIR) {
-                    continue;
+    private boolean loadLegacyYaml() {
+        File file = new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml");
+        if (!file.isFile()) return false;
+        YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
+        for (String pageKey : config.getKeys(false)) {
+            int page = positiveInt(pageKey);
+            if (page < 0 || config.getConfigurationSection(pageKey) == null) continue;
+            Inventory inventory = createInventory(page);
+            for (String slotKey : config.getConfigurationSection(pageKey).getKeys(false)) {
+                int slot = positiveInt(slotKey);
+                ItemStack item = config.getItemStack(pageKey + "." + slotKey);
+                if (slot >= 0 && slot < inventory.getSize() && item != null && item.getType() != Material.AIR) {
+                    inventory.setItem(slot, item);
                 }
-
-                conf.set(invNum + "." + i, item);
-                empty = false;
             }
-
-            if (empty) {
-                conf.set(invNum + ".0", new ItemStack(Material.AIR));
-            }
-        }
-
-        if (asyncSave) {
-
-            new Thread() {
-                @Override
-                public void run() {
-                    try {
-                        conf.save(file);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }.start();
-
-        } else {
-            try {
-                conf.save(file);
-            } catch (IOException e) {
-                e.printStackTrace();
-                return false;
-            }
+            inventories.put(page, inventory);
         }
         return true;
     }
 
-    public Inventory getInventory(int num) {
-        return inventories.get(num);
+    private void deserialize(byte[] bytes) throws IOException, ClassNotFoundException {
+        try (BukkitObjectInputStream input = new BukkitObjectInputStream(new ByteArrayInputStream(bytes))) {
+            int pages = input.readInt();
+            for (int p = 0; p < pages; p++) {
+                int page = input.readInt();
+                int size = input.readInt();
+                Inventory inventory = createInventory(page);
+                for (int slot = 0; slot < size; slot++) {
+                    ItemStack item = (ItemStack) input.readObject();
+                    if (slot < inventory.getSize()) inventory.setItem(slot, item);
+                }
+                inventories.put(page, inventory);
+            }
+        }
     }
 
-    public void initializeInventory(int page) {
-        inventories.put(page,
-                Bukkit.createInventory(null, 9 * 6, Chat.f("{0} &e- &cPage {1}", EnderChestPlus.enderChestTitlePrefix, page + 1)));
+    public synchronized boolean save(boolean ignoredAsyncSave) {
+        try {
+            database.save(uuid, serialize());
+            return true;
+        } catch (SQLException | IOException e) {
+            Bukkit.getLogger().severe("Could not save inventory data for " + uuid + ": " + e.getMessage());
+            return false;
+        }
     }
 
-    public InventoryData migrateAs(UUID uuid) {
-        InventoryData data = new InventoryData(uuid, false);
-        for (int i = 0; i < EnderChestPlus.MAX_MAIN_INVENTORY_PAGES * 54; i++) {
-            Inventory inv = inventories.getOrDefault(i, null);
-            if (inv == null) {
-                continue;
+    private byte[] serialize() throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (BukkitObjectOutputStream output = new BukkitObjectOutputStream(bytes)) {
+            output.writeInt(inventories.size());
+            for (Map.Entry<Integer, Inventory> entry : inventories.entrySet()) {
+                output.writeInt(entry.getKey());
+                output.writeInt(entry.getValue().getSize());
+                for (ItemStack item : entry.getValue().getContents()) output.writeObject(item);
             }
-            Inventory newInv = Bukkit.createInventory(null, inv.getSize());
+        }
+        return bytes.toByteArray();
+    }
 
-            for (int index = 0; index < inv.getSize(); index++) {
-                ItemStack item = inv.getItem(index);
-                newInv.setItem(index, item);
-            }
+    public Inventory getInventory(int num) { return inventories.get(num); }
 
-            data.inventories.put(i, newInv);
+    public void initializeInventory(int page) { inventories.put(page, createInventory(page)); }
+
+    public InventoryData migrateAs(UUID targetUuid) {
+        InventoryData data = new InventoryData(targetUuid, database, false);
+        for (Map.Entry<Integer, Inventory> entry : inventories.entrySet()) {
+            Inventory copy = data.createInventory(entry.getKey());
+            copy.setContents(entry.getValue().getContents());
+            data.inventories.put(entry.getKey(), copy);
         }
         return data;
     }
 
-    private int isPositive(String str) {
-        try {
-            int i = Integer.parseInt(str);
-            if (i < 0) {
-                return -1;
-            }
-            return i;
-        } catch (Exception e) {
-            return -1;
-        }
+    private Inventory createInventory(int page) {
+        return Bukkit.createInventory(null, 54,
+                Chat.f("{0} &e- &cPage {1}", EnderChestPlus.enderChestTitlePrefix, page + 1));
+    }
+
+    private static int positiveInt(String value) {
+        try { int i = Integer.parseInt(value); return i < 0 ? -1 : i; }
+        catch (NumberFormatException ignored) { return -1; }
     }
 }

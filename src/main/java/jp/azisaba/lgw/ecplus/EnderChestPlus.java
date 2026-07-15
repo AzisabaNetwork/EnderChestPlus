@@ -30,6 +30,7 @@ public class EnderChestPlus extends JavaPlugin {
     private static File inventoryDataFile;
     private static TaskChainFactory taskChainFactory;
     private AutoSaveTask saveTask;
+    private DatabaseManager database;
     @Getter
     private DropItemContainer dropItemContainer = null;
     @Getter
@@ -57,15 +58,22 @@ public class EnderChestPlus extends JavaPlugin {
         taskChainFactory = BukkitTaskChainFactory.create(this);
 
         inventoryDataFile = new File(getDataFolder(), "Inventories");
-        loader = new InventoryLoader(this);
+        saveDefaultConfig();
+        EnderChestPlus.config = new PluginConfig(this);
+        EnderChestPlus.config.loadConfig();
+        try {
+            database = new DatabaseManager(config);
+        } catch (Exception e) {
+            getLogger().severe("MySQL initialization failed: " + e.getMessage());
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+        loader = new InventoryLoader(this, database);
 
         dropItemContainer = new DropItemContainer(this);
         dropItemContainer.load();
         saveTask = new AutoSaveTask(this, loader);
         saveTask.runTaskTimer(this, 20 * 60 * 5, 20 * 60 * 5);
-
-        EnderChestPlus.config = new PluginConfig(this);
-        EnderChestPlus.config.loadConfig();
 
         Bukkit.getOnlinePlayers().forEach(p -> newSharedChain("loadInventory")
                 .async(() -> loader.loadInventoryData(p))
@@ -96,11 +104,11 @@ public class EnderChestPlus extends JavaPlugin {
     @Override
     public void onDisable() {
 
-        saveTask.cancel();
+        if (saveTask != null) saveTask.cancel();
 
-        dropItemContainer.save();
+        if (dropItemContainer != null) dropItemContainer.save();
 
-        Bukkit.getOnlinePlayers().forEach(player -> {
+        if (loader != null) Bukkit.getOnlinePlayers().forEach(player -> {
             if (player.getOpenInventory() == null) {
                 return;
             }
@@ -134,7 +142,8 @@ public class EnderChestPlus extends JavaPlugin {
             }
         });
 
-        loader.saveAllInventoryData(false);
+        if (loader != null) loader.saveAllInventoryData(false);
+        if (database != null) database.close();
 
         Bukkit.getLogger().info(getName() + " disabled.");
     }

@@ -40,6 +40,7 @@ tasks {
         dependsOn(shadowJar)
     }
     shadowJar {
+        archiveFileName.set("EnderChestPlus.jar")
         archiveClassifier.set("")
         relocate("co.aikar.taskchain", "jp.azisaba.lgw.ecplus.depends.taskchain")
         relocate("com.zaxxer.hikari", "jp.azisaba.lgw.ecplus.depends.hikari")

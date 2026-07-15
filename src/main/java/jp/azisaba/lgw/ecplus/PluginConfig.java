@@ -22,6 +22,27 @@ public class PluginConfig {
     @ConfigOptions(path = "Chat.Prefix", type = OptionType.CHAT_FORMAT)
     public String chatPrefix = "&3[&6EC&b+&3] ";
 
+    @ConfigOptions(path = "MySQL.Host")
+    public String mysqlHost = "127.0.0.1";
+    @ConfigOptions(path = "MySQL.Port")
+    public int mysqlPort = 3306;
+    @ConfigOptions(path = "MySQL.Database")
+    public String mysqlDatabase = "enderchestplus";
+    @ConfigOptions(path = "MySQL.Username")
+    public String mysqlUsername = "enderchestplus";
+    @ConfigOptions(path = "MySQL.Password")
+    public String mysqlPassword = "change-me";
+    @ConfigOptions(path = "MySQL.TablePrefix")
+    public String mysqlTablePrefix = "ecplus_";
+    @ConfigOptions(path = "MySQL.PoolSize")
+    public int mysqlPoolSize = 5;
+    @ConfigOptions(path = "MySQL.ConnectionTimeoutMillis")
+    public int mysqlConnectionTimeoutMillis = 10000;
+    @ConfigOptions(path = "MySQL.UseSSL")
+    public boolean mysqlUseSsl = false;
+    @ConfigOptions(path = "MySQL.VerifyServerCertificate")
+    public boolean mysqlVerifyServerCertificate = true;
+
     public PluginConfig(EnderChestPlus plugin) {
         this.plugin = plugin;
         conf = plugin.getConfig();
