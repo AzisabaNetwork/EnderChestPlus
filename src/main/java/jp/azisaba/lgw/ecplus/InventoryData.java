@@ -63,6 +63,12 @@ public class InventoryData {
     private boolean loadLegacyYaml() {
         File file = new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml");
         if (!file.isFile()) return false;
+
+        // 前回のクラッシュなどで残った .tmp ファイルを後片付けする
+        File staleTmp = new File(file.getAbsolutePath() + ".tmp");
+        if (staleTmp.exists()) {
+            staleTmp.delete();
+        }
         YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
         for (String pageKey : config.getKeys(false)) {
             int page = positiveInt(pageKey);
