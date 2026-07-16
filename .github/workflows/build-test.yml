@@ -23,10 +23,10 @@ jobs:
         with:
           java-version: "21"
           distribution: "temurin"
-          cache: "maven"
+          cache: "gradle"
       - name: Show Java version
         run: java -version
-      - name: Show Maven version
-        run: mvn --version
-      - name: Build with Maven
-        run: mvn -B package
+      - name: Grant execute permission for Gradle wrapper
+        run: chmod +x gradlew
+      - name: Build with Gradle
+        run: ./gradlew --no-daemon build
