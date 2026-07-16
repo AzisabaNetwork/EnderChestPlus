@@ -63,6 +63,12 @@ public class InventoryData {
             return;
         }
 
+        // 前回のクラッシュなどで残った .tmp ファイルを後片付けする
+        File staleTmp = new File(file.getAbsolutePath() + ".tmp");
+        if (staleTmp.exists()) {
+            staleTmp.delete();
+        }
+
         YamlConfiguration conf = YamlConfiguration.loadConfiguration(file);
         if (conf.getConfigurationSection("") != null) {
 
@@ -108,6 +114,7 @@ public class InventoryData {
 
     public boolean save(boolean asyncSave) {
         File file = new File(EnderChestPlus.getInventoryDataFile(), uuid.toString() + ".yml");
+        File tmpFile = new File(file.getAbsolutePath() + ".tmp");
         YamlConfiguration conf = new YamlConfiguration();
 
         for (int invNum : inventories.keySet()) {
@@ -131,20 +138,27 @@ public class InventoryData {
 
         if (asyncSave) {
 
-            new Thread() {
-                @Override
-                public void run() {
-                    try {
+            new Thread(() -> {
+                try {
+                    // 一時ファイルに書き込んでからアトミックリネームすることで、
+                    // 書き込み途中のファイルを他スレッド（参加時の読み込み等）が
+                    // 読んでしまうレースコンディションを防ぐ
+                    conf.save(tmpFile);
+                    if (!tmpFile.renameTo(file)) {
+                        // renameTo が失敗する環境（Windows など）では直接保存にフォールバック
                         conf.save(file);
-                    } catch (IOException e) {
-                        e.printStackTrace();
                     }
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
-            }.start();
+            }).start();
 
         } else {
             try {
-                conf.save(file);
+                conf.save(tmpFile);
+                if (!tmpFile.renameTo(file)) {
+                    conf.save(file);
+                }
             } catch (IOException e) {
                 e.printStackTrace();
                 return false;
