@@ -10,6 +10,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RequiredArgsConstructor
 public class InventoryLoader {
@@ -17,8 +18,8 @@ public class InventoryLoader {
     private static ItemStack lowPane = null, midiumPane = null, highPane = null;
     private final EnderChestPlus plugin;
     private final DatabaseManager database;
-    private final HashMap<UUID, InventoryData> invs = new HashMap<>();
-    private final HashMap<Player, UUID> adminLookingAt = new HashMap<>();
+    private final ConcurrentHashMap<UUID, InventoryData> invs = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Player, UUID> adminLookingAt = new ConcurrentHashMap<>();
 
     public static Inventory getMainInventory(InventoryData data, int index) {
         if (index < 0 || EnderChestPlus.MAX_MAIN_INVENTORY_PAGES - 1 < index) {
@@ -160,19 +161,12 @@ public class InventoryLoader {
         return lore;
     }
 
-    public void loadInventoryData(Player p) {
-        loadInventoryData(p.getUniqueId());
+    public InventoryData loadInventoryData(Player p) {
+        return loadInventoryData(p.getUniqueId());
     }
 
-    public void loadInventoryData(UUID uuid) {
-        if (!invs.containsKey(uuid)) {
-            InventoryData data = new InventoryData(uuid, database);
-
-            // 非同期で実行されていた場合に ConcurrentModificationException の発生を防ぐ
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                invs.put(uuid, data);
-            }, 0L);
-        }
+    public InventoryData loadInventoryData(UUID uuid) {
+        return invs.computeIfAbsent(uuid, key -> new InventoryData(key, database));
     }
 
     public InventoryData getInventoryData(Player p) {
@@ -180,10 +174,7 @@ public class InventoryLoader {
     }
 
     public InventoryData getInventoryData(UUID uuid) {
-        if (invs.containsKey(uuid)) {
-            return invs.get(uuid);
-        }
-        return null;
+        return invs.get(uuid);
     }
 
     public int saveAllInventoryData(boolean asyncSave) {
@@ -194,11 +185,13 @@ public class InventoryLoader {
 
         int count = 0;
 
-        for (UUID uuid : new ArrayList<>(invs.keySet())) {
-            boolean success = invs.get(uuid).save(asyncSave);
+        for (Map.Entry<UUID, InventoryData> entry : new ArrayList<>(invs.entrySet())) {
+            UUID uuid = entry.getKey();
+            InventoryData data = entry.getValue();
+            boolean success = data.save(asyncSave);
 
             if (success && Bukkit.getPlayer(uuid) == null) {
-                invs.remove(uuid);
+                invs.remove(uuid, data);
             }
 
             count++;
@@ -211,15 +204,13 @@ public class InventoryLoader {
         InventoryData data = invs.get(uuid);
         if (data == null) return false;
         boolean saved = data.save(false);
-        if (saved) invs.remove(uuid);
+        if (saved) invs.remove(uuid, data);
         return saved;
     }
 
     public void setLookingAt(Player p, UUID uuid) {
         if (uuid == null) {
-            if (adminLookingAt.containsKey(p)) {
-                adminLookingAt.remove(p);
-            }
+            adminLookingAt.remove(p);
             return;
         }
 
@@ -227,21 +218,11 @@ public class InventoryLoader {
     }
 
     public UUID getLookingAt(Player p) {
-        if (adminLookingAt.containsKey(p)) {
-            return adminLookingAt.get(p);
-        }
-        return null;
+        return adminLookingAt.get(p);
     }
 
     public boolean migrate(UUID from, UUID to) {
-        if (!invs.containsKey(from)) {
-            loadInventoryData(from);
-        }
-
-        InventoryData data = invs.get(from);
-        if (data == null) {
-            return false;
-        }
+        InventoryData data = loadInventoryData(from);
         InventoryData migratedData = data.migrateAs(to);
 
         invs.put(to, migratedData);
