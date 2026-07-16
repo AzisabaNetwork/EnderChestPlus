@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "net.azisaba"
-version = "1.21.11+1.3.2"
+version = "1.21.11+1.3.3"
 description = "EnderChest plugin for Azisaba LeonGunWar"
 
 repositories {
