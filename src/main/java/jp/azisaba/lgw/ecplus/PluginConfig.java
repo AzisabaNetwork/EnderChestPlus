@@ -3,6 +3,8 @@ package jp.azisaba.lgw.ecplus;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.configuration.file.FileConfiguration;
 
@@ -137,7 +139,8 @@ public class PluginConfig {
                         Sound sound;
 
                         try {
-                            sound = Sound.valueOf(name.toUpperCase());
+                            sound = Registry.SOUNDS.get(NamespacedKey.minecraft(name.toLowerCase()));
+                            if (sound == null) throw new IllegalArgumentException("Unknown sound: " + name);
                         } catch (Exception e) {
                             Bukkit.getLogger().warning("Error. " + path + " の値がロードできませんでした。");
                             continue;

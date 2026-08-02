@@ -25,7 +25,7 @@ public class InventoryLoader {
         if (index < 0 || EnderChestPlus.MAX_MAIN_INVENTORY_PAGES - 1 < index) {
             return null;
         }
-        Inventory mainInv = Bukkit.createInventory(null, 9 * 6, EnderChestPlus.mainEnderChestTitle + Chat.f(" &a- &e{0}", index + 1));
+        Inventory mainInv = Bukkit.createInventory(null, 9 * 6, Chat.component(EnderChestPlus.mainEnderChestTitle + Chat.f(" &a- &e{0}", index + 1)));
 
         for (int i = 0; i < mainInv.getSize(); i++) {
             Inventory inv = data.getInventory((index * 54) + i);
@@ -54,10 +54,10 @@ public class InventoryLoader {
     }
 
     public static Inventory getBuyInventory(int page) {
-        Inventory inv = Bukkit.createInventory(null, 9 * 1, Chat.f("{0}&a - &cUnlock Page {1}", EnderChestPlus.enderChestTitlePrefix, page + 1));
-        ItemStack confirm = ItemHelper.createItem(Material.LIME_STAINED_GLASS_PANE, 5, Chat.f("&a確定"));
-        ItemStack cancel = ItemHelper.createItem(Material.RED_STAINED_GLASS_PANE, 14, Chat.f("&cキャンセル"));
-        ItemStack sign = ItemHelper.createItem(Material.OAK_SIGN, 0, Chat.f("&aページ&e{0}&aを購入しますか？", page + 1));
+        Inventory inv = Bukkit.createInventory(null, 9 * 1, Chat.component(Chat.f("{0}&a - &cUnlock Page {1}", EnderChestPlus.enderChestTitlePrefix, page + 1)));
+        ItemStack confirm = ItemHelper.createItem(Material.LIME_STAINED_GLASS_PANE, Chat.f("&a確定"));
+        ItemStack cancel = ItemHelper.createItem(Material.RED_STAINED_GLASS_PANE, Chat.f("&cキャンセル"));
+        ItemStack sign = ItemHelper.createItem(Material.OAK_SIGN, Chat.f("&aページ&e{0}&aを購入しますか？", page + 1));
 
         inv.setItem(0, cancel);
         inv.setItem(1, cancel);
@@ -73,7 +73,7 @@ public class InventoryLoader {
     }
 
     public static ItemStack getBuyPane(int page) {
-        ItemStack buyPane = ItemHelper.createItem(Material.BLACK_STAINED_GLASS_PANE, 15, Chat.f("&eクリックでページ&a{0}&eを購入する", page + 1));
+        ItemStack buyPane = ItemHelper.createItem(Material.BLACK_STAINED_GLASS_PANE, Chat.f("&eクリックでページ&a{0}&eを購入する", page + 1));
 
         List<String> lore = new ArrayList<>(Arrays.asList(Chat.f("&6解禁コスト&a:")));
         if (0 <= page && page < 18) {
@@ -99,23 +99,23 @@ public class InventoryLoader {
 
     public static ItemStack getLowPane() {
         if (lowPane == null) {
-            lowPane = new ItemStack(Material.LIME_STAINED_GLASS_PANE, 1, (byte) 5);
+            lowPane = new ItemStack(Material.LIME_STAINED_GLASS_PANE);
         }
-        return lowPane;
+        return lowPane.clone();
     }
 
     public static ItemStack getMidiumPane() {
         if (midiumPane == null) {
-            midiumPane = new ItemStack(Material.YELLOW_STAINED_GLASS_PANE, 1, (byte) 4);
+            midiumPane = new ItemStack(Material.YELLOW_STAINED_GLASS_PANE);
         }
-        return midiumPane;
+        return midiumPane.clone();
     }
 
     public static ItemStack getHighPane() {
         if (highPane == null) {
-            highPane = new ItemStack(Material.RED_STAINED_GLASS_PANE, 1, (byte) 14);
+            highPane = new ItemStack(Material.RED_STAINED_GLASS_PANE);
         }
-        return highPane;
+        return highPane.clone();
     }
 
     private static double getPercentage(Inventory inv) {
@@ -140,8 +140,8 @@ public class InventoryLoader {
             }
 
             String msg = Chat.f("&r");
-            if (item.hasItemMeta() && item.getItemMeta().hasDisplayName()) {
-                msg += item.getItemMeta().getDisplayName();
+            if (item.hasItemMeta() && ItemHelper.getDisplayName(item) != null) {
+                msg += ItemHelper.getDisplayName(item);
             } else {
                 msg += item.getType().toString();
             }
@@ -161,8 +161,8 @@ public class InventoryLoader {
         return lore;
     }
 
-    public InventoryData loadInventoryData(Player p) {
-        return loadInventoryData(p.getUniqueId());
+    public void loadInventoryData(Player p) {
+        loadInventoryData(p.getUniqueId());
     }
 
     public InventoryData loadInventoryData(UUID uuid) {

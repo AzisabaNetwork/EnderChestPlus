@@ -86,18 +86,14 @@ public class EnderChestPlus extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new InventoryOpenListener(), this);
 
         Bukkit.getPluginCommand("enderchestplus").setExecutor(new EnderChestPlusCommand(this, loader));
-        Bukkit.getPluginCommand("enderchestplus").setPermissionMessage(Chat.f("{0}&c権限がありません！", config.chatPrefix));
         Bukkit.getPluginCommand("receivedropped").setExecutor(new ReceiveDroppedCommand(dropItemContainer));
-        Bukkit.getPluginCommand("receivedropped").setPermissionMessage(Chat.f("{0}&c権限がありません！", config.chatPrefix));
         Bukkit.getPluginCommand("ec2").setExecutor(new ShortcutCommand(this, loader, dropItemContainer));
 
         Bukkit.getLogger().info(getName() + " enabled.");
 
-        //VaultAPI初期化
         if (!setupEconomy()) {
             getLogger().severe("Vaultのセットアップに失敗しました。");
             getServer().getPluginManager().disablePlugin(this);
-            return;
         }
     }
 

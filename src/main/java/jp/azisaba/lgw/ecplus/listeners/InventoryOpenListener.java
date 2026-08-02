@@ -1,5 +1,7 @@
 package jp.azisaba.lgw.ecplus.listeners;
 
+import jp.azisaba.lgw.ecplus.utils.Chat;
+
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -29,7 +31,7 @@ public class InventoryOpenListener implements Listener {
     public static String getPlayerOpenInventoryTitle(Player player) {
         InventoryOpenEvent event = playerInventoryEvents.get(player);
         if (event != null) {
-            return event.getView().getTitle();
+            return Chat.legacy(event.getView().title());
         } else {
             return "No inventory open";
         }

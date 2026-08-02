@@ -5,6 +5,7 @@ import jp.azisaba.lgw.ecplus.EnderChestPlus;
 import jp.azisaba.lgw.ecplus.InventoryData;
 import jp.azisaba.lgw.ecplus.InventoryLoader;
 import jp.azisaba.lgw.ecplus.utils.Chat;
+import jp.azisaba.lgw.ecplus.utils.ItemHelper;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.Material;
 import org.bukkit.Sound;
@@ -27,7 +28,6 @@ public class EnderChestListener implements Listener {
     private final InventoryLoader loader;
     private final DropItemContainer dropItemContainer;
 
-    @SuppressWarnings("deprecation")
     @EventHandler
     public void clickInventory(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player)) {
@@ -49,15 +49,15 @@ public class EnderChestListener implements Listener {
             return;
         }
 
-        if (item.getData().getData() == (byte) 15) {
-            String pageNumStr = Chat.r(item.getItemMeta().getDisplayName());
+        if (item.getType() == Material.BLACK_STAINED_GLASS_PANE) {
+            String pageNumStr = Chat.r(ItemHelper.getDisplayName(item));
             pageNumStr = pageNumStr.substring(8, pageNumStr.indexOf("を購入する"));
             int pageNum = Integer.parseInt(pageNumStr);
             p.openInventory(InventoryLoader.getBuyInventory(pageNum - 1));
         } else {
             int invNum = -1;
             try {
-                String title = Chat.r(item.getItemMeta().getDisplayName());
+                String title = Chat.r(ItemHelper.getDisplayName(item));
                 title = title.substring(3, title.indexOf("を開く"));
                 invNum = Integer.parseInt(title);
             } catch (Exception ex) {
@@ -123,10 +123,9 @@ public class EnderChestListener implements Listener {
 
     @EventHandler
     public void switchMainInventoryPage(InventoryClickEvent e) {
-        if (!(e.getWhoClicked() instanceof Player)) {
+        if (!(e.getWhoClicked() instanceof Player p)) {
             return;
         }
-        Player p = (Player) e.getWhoClicked();
         Inventory inv = e.getInventory();
         Inventory clickedInv = e.getClickedInventory();
         String invname = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
@@ -183,10 +182,9 @@ public class EnderChestListener implements Listener {
 
     @EventHandler
     public void nextOrBackInventory(InventoryClickEvent e) {
-        if (!(e.getWhoClicked() instanceof Player)) {
+        if (!(e.getWhoClicked() instanceof Player p)) {
             return;
         }
-        Player p = (Player) e.getWhoClicked();
         Inventory inv = e.getInventory();
         Inventory clickedInv = e.getClickedInventory();
         String invname = InventoryOpenListener.getPlayerOpenInventoryTitle(p);

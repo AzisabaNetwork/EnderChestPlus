@@ -1,46 +1,45 @@
 package jp.azisaba.lgw.ecplus.utils;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * @author siloneco forked from amata1219 version: 1.0.0
- */
 public class ItemHelper {
 
+    private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacySection();
+
     public static ItemStack create(Material type) {
-        ItemStack item = new ItemStack(type);
-        return item;
+        return new ItemStack(type);
     }
 
     public static ItemStack create(Material type, String title, String... lore) {
         ItemStack item = new ItemStack(type);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(title);
+        meta.displayName(toComponent(title));
         if (lore.length > 0) {
-            meta.setLore(Arrays.asList(lore));
+            meta.lore(Arrays.stream(lore).map(ItemHelper::toComponent).toList());
         }
         item.setItemMeta(meta);
         return item;
     }
 
-    public static ItemStack createItem(Material material, int data, String displayName, String... lore) {
-        ItemStack item = getItemStackWithoutWarning(material, data);
+    public static ItemStack createItem(Material material, String displayName, String... lore) {
+        ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
 
-        meta.setDisplayName(displayName != null ? displayName : "");
+        meta.displayName(toComponent(displayName));
 
         if (lore == null || lore.length == 0) {
-            meta.setLore(new ArrayList<String>());
+            meta.lore(List.of());
         } else {
-            meta.setLore(Arrays.asList(lore));
+            meta.lore(Arrays.stream(lore).map(ItemHelper::toComponent).toList());
         }
 
         item.setItemMeta(meta);
@@ -56,23 +55,22 @@ public class ItemHelper {
 
     public static void setDisplayName(ItemStack item, String displayName) {
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(displayName);
+        meta.displayName(toComponent(displayName));
         item.setItemMeta(meta);
     }
 
     public static void setLore(ItemStack item, List<String> args) {
         ItemMeta meta = item.getItemMeta();
-        meta.setLore(args);
+        meta.lore(args.stream().map(ItemHelper::toComponent).toList());
         item.setItemMeta(meta);
     }
 
-    private static ItemStack getItemStackWithoutWarning(Material material, int data) {
-        try {
-            return ItemStack.class.getConstructor(Material.class, int.class, short.class).newInstance(material, 1,
-                    (short) data);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
+    public static String getDisplayName(ItemStack item) {
+        Component displayName = item.getItemMeta().displayName();
+        return displayName == null ? null : LEGACY_SERIALIZER.serialize(displayName);
+    }
+
+    private static Component toComponent(String text) {
+        return LEGACY_SERIALIZER.deserialize(text == null ? "" : text);
     }
 }

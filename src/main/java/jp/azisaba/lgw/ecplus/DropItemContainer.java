@@ -49,7 +49,7 @@ public class DropItemContainer {
             return inventories.get(id);
         }
 
-        Inventory inv = Bukkit.createInventory(null, 9 * 3, Chat.f("&aDropped Item &7- &e{0}", id));
+        Inventory inv = Bukkit.createInventory(null, 9 * 3, Chat.component(Chat.f("&aDropped Item &7- &e{0}", id)));
         inv.setItem(13, data.getItemStack());
 
         inventories.put(id, inv);

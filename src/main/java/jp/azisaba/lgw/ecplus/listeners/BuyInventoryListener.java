@@ -36,7 +36,8 @@ public class BuyInventoryListener implements Listener {
         InventoryView opening = e.getView();
         ItemStack clickedItem = e.getCurrentItem();
 
-        if (!opening.getTitle().startsWith(Chat.f("{0}&a - &cUnlock Page", EnderChestPlus.enderChestTitlePrefix))) {
+        String openingTitle = Chat.legacy(opening.title());
+        if (!openingTitle.startsWith(Chat.f("{0}&a - &cUnlock Page", EnderChestPlus.enderChestTitlePrefix))) {
             return;
         }
 
@@ -45,7 +46,8 @@ public class BuyInventoryListener implements Listener {
 
         int page;
         try {
-            page = Integer.parseInt(Chat.r(opening.getTitle()).substring(Chat.r(opening.getTitle()).lastIndexOf(" ") + 1)) - 1;
+            String plainTitle = Chat.r(openingTitle);
+            page = Integer.parseInt(plainTitle.substring(plainTitle.lastIndexOf(" ") + 1)) - 1;
         } catch (Exception ex) {
             ex.printStackTrace();
             return;
@@ -54,10 +56,9 @@ public class BuyInventoryListener implements Listener {
         if (clickedItem.getType() == Material.OAK_SIGN) {
             return;
         }
-        int data = getData(clickedItem);
         int openMainInventoryIndex = page / 54;
 
-        if (data == 5) {
+        if (clickedItem.getType() == Material.LIME_STAINED_GLASS_PANE) {
             boolean success = costPlayer(p, page);
 
             if (success) {
@@ -78,7 +79,7 @@ public class BuyInventoryListener implements Listener {
                 p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
                 p.closeInventory();
             }
-        } else if (data == 14) {
+        } else if (clickedItem.getType() == Material.RED_STAINED_GLASS_PANE) {
             UUID looking = loader.getLookingAt(p);
             InventoryData data2;
             if (looking != null) {
@@ -89,12 +90,6 @@ public class BuyInventoryListener implements Listener {
             p.openInventory(InventoryLoader.getMainInventory(data2, openMainInventoryIndex));
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
-        return;
-    }
-
-    @SuppressWarnings("deprecation")
-    private int getData(ItemStack item) {
-        return item.getData().getData();
     }
 
     private boolean costPlayer(Player p, int page) {
