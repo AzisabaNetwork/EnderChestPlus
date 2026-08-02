@@ -3,6 +3,7 @@ package jp.azisaba.lgw.ecplus;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -12,6 +13,8 @@ import java.io.DataOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
@@ -60,16 +63,19 @@ public class InventoryData {
             } else if (loadLegacyYaml()) {
                 save(false);
             }
-        } catch (SQLException | IOException e) {
+        } catch (SQLException | IOException | InvalidConfigurationException e) {
             throw new IllegalStateException("Could not load inventory data for " + uuid, e);
         }
         for (int i = 0; i < 18; i++) inventories.computeIfAbsent(i, this::createInventory);
     }
 
-    private boolean loadLegacyYaml() {
+    private boolean loadLegacyYaml() throws IOException, InvalidConfigurationException {
         File file = new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml");
         if (!file.isFile()) return false;
-        YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
+        String yaml = Files.readString(file.toPath(), StandardCharsets.UTF_8);
+        yaml = yaml.replaceAll("(?m)^\\s*internal:.*(?:\\R|$)", "");
+        YamlConfiguration config = new YamlConfiguration();
+        config.loadFromString(yaml);
         for (String pageKey : config.getKeys(false)) {
             int page = positiveInt(pageKey);
             if (page < 0 || config.getConfigurationSection(pageKey) == null) continue;
