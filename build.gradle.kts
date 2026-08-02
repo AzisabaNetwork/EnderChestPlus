@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "net.azisaba"
-version = "1.21.11+1.3.3"
+version = "1.21.11+1.3.4"
 description = "EnderChest plugin for Azisaba LeonGunWar"
 
 repositories {
@@ -47,6 +47,7 @@ tasks {
     }
     withType<JavaCompile> {
         options.encoding = "UTF-8"
+        options.compilerArgs.add("-Xlint:deprecation")
     }
     processResources {
         val props = mapOf("version" to version, "description" to project.description)
