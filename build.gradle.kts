@@ -4,8 +4,8 @@ plugins {
 }
 
 group = "net.azisaba"
-version = "1.21.11+1.3.4"
-description = "EnderChest plugin for Azisaba LeonGunWar"
+version = "1.21.11+1.3.5"
+description = "EnderChest plugin for Azisaba Life"
 
 repositories {
     mavenCentral()
