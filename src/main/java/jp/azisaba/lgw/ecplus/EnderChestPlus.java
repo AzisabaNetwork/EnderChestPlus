@@ -69,6 +69,10 @@ public class EnderChestPlus extends JavaPlugin {
             return;
         }
         loader = new InventoryLoader(this, database);
+        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+            int migrated = loader.migrateLegacyYamlData();
+            if (migrated > 0) getLogger().info("Migrated " + migrated + " legacy YAML inventories to MySQL.");
+        });
 
         dropItemContainer = new DropItemContainer(this);
         dropItemContainer.load();

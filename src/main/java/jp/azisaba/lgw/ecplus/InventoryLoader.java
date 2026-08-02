@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
+import java.io.File;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -167,6 +168,33 @@ public class InventoryLoader {
 
     public InventoryData loadInventoryData(UUID uuid) {
         return invs.computeIfAbsent(uuid, key -> new InventoryData(key, database));
+    }
+
+    /**
+     * Imports every UUID-named inventory YAML file left by versions that predate database storage.
+     * Files already present in the database are left untouched.
+     *
+     * @return the number of valid legacy inventory files processed
+     */
+    public int migrateLegacyYamlData() {
+        File[] files = EnderChestPlus.getInventoryDataFile().listFiles((directory, name) -> name.endsWith(".yml"));
+        if (files == null) return 0;
+
+        int migrated = 0;
+        for (File file : files) {
+            String filename = file.getName();
+            try {
+                UUID uuid = UUID.fromString(filename.substring(0, filename.length() - ".yml".length()));
+                loadInventoryData(uuid);
+                invs.remove(uuid);
+                migrated++;
+            } catch (IllegalArgumentException ignored) {
+                // Ignore non-UUID YAML files in the legacy inventory directory.
+            } catch (RuntimeException e) {
+                plugin.getLogger().warning("Could not migrate legacy inventory " + filename + ": " + e.getMessage());
+            }
+        }
+        return migrated;
     }
 
     public InventoryData getInventoryData(Player p) {
