@@ -10,6 +10,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
+import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -171,10 +172,10 @@ public class InventoryLoader {
     }
 
     /**
-     * Imports every UUID-named inventory YAML file left by versions that predate database storage.
-     * Files already present in the database are left untouched.
+     * Imports every UUID-named inventory YAML file that does not yet have a database row.
+     * This method must run on the server thread because legacy data is materialized as Bukkit inventories.
      *
-     * @return the number of valid legacy inventory files processed
+     * @return the number of legacy inventories actually written to the database
      */
     public int migrateLegacyYamlData() {
         File[] files = EnderChestPlus.getInventoryDataFile().listFiles((directory, name) -> name.endsWith(".yml"));
@@ -185,12 +186,13 @@ public class InventoryLoader {
             String filename = file.getName();
             try {
                 UUID uuid = UUID.fromString(filename.substring(0, filename.length() - ".yml".length()));
-                loadInventoryData(uuid);
-                invs.remove(uuid);
-                migrated++;
+                if (database.exists(uuid)) continue;
+
+                InventoryData data = new InventoryData(uuid, database);
+                if (data.wasLoadedFromLegacyYaml()) migrated++;
             } catch (IllegalArgumentException ignored) {
                 // Ignore non-UUID YAML files in the legacy inventory directory.
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | SQLException e) {
                 plugin.getLogger().warning("Could not migrate legacy inventory " + filename + ": " + e.getMessage());
             }
         }

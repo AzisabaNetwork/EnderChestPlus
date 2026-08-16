@@ -55,6 +55,16 @@ public final class DatabaseManager implements AutoCloseable {
         }
     }
 
+    public boolean exists(UUID uuid) throws SQLException {
+        String sql = "SELECT 1 FROM `" + table + "` WHERE `player_uuid` = ?";
+        try (Connection connection = dataSource.getConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, uuid.toString());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
     public void save(UUID uuid, byte[] data) throws SQLException {
         String sql = "INSERT INTO `" + table + "` (`player_uuid`, `inventory_data`) VALUES (?, ?) "
                 + "ON DUPLICATE KEY UPDATE `inventory_data` = VALUES(`inventory_data`)";

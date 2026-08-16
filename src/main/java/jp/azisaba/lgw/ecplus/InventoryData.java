@@ -25,6 +25,7 @@ public class InventoryData {
     private final Map<Integer, Inventory> inventories = new HashMap<>();
     private final UUID uuid;
     private final DatabaseManager database;
+    private boolean loadedFromLegacyYaml;
 
     public InventoryData(UUID uuid, DatabaseManager database) {
         this(uuid, database, true);
@@ -56,12 +57,12 @@ public class InventoryData {
                 if (isCurrentFormat(bytes)) {
                     deserialize(bytes);
                 } else if (loadLegacyYaml()) {
-                    save(false);
+                    loadedFromLegacyYaml = save(false);
                 } else {
                     throw new IOException("Unsupported legacy inventory data format");
                 }
             } else if (loadLegacyYaml()) {
-                save(false);
+                loadedFromLegacyYaml = save(false);
             }
         } catch (SQLException | IOException | InvalidConfigurationException e) {
             throw new IllegalStateException("Could not load inventory data for " + uuid, e);
@@ -139,6 +140,8 @@ public class InventoryData {
     }
 
     public Inventory getInventory(int num) { return inventories.get(num); }
+
+    public boolean wasLoadedFromLegacyYaml() { return loadedFromLegacyYaml; }
 
     public void initializeInventory(int page) { inventories.put(page, createInventory(page)); }
 
