@@ -28,7 +28,6 @@ dependencies {
     implementation("me.rayzr522:jsonmessage:1.3.1")
     implementation("com.github.KevinPriv:MojangAPI:1.0")
     implementation("co.aikar:taskchain-bukkit:3.7.2")
-    implementation("commons-lang:commons-lang:2.6")
 }
 
 java {
@@ -46,7 +45,7 @@ tasks {
     }
     withType<JavaCompile> {
         options.encoding = "UTF-8"
-        options.compilerArgs.add("-Xlint:deprecation")
+        options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
     }
     processResources {
         val props = mapOf("version" to version, "description" to project.description)

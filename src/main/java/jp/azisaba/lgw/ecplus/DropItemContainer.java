@@ -3,7 +3,6 @@ package jp.azisaba.lgw.ecplus;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang.RandomStringUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -14,9 +13,12 @@ import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 @RequiredArgsConstructor
 public class DropItemContainer {
+
+    private static final char[] ID_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray();
 
     private final EnderChestPlus plugin;
 
@@ -25,9 +27,9 @@ public class DropItemContainer {
 
     public String addItem(Player p, ItemStack item) {
 
-        String id = RandomStringUtils.randomAlphabetic(8);
+        String id = createId();
         while (items.containsKey(id)) {
-            id = RandomStringUtils.randomAlphabetic(8);
+            id = createId();
         }
 
         DropItem itemData = new DropItem(p.getUniqueId(), item);
@@ -59,6 +61,15 @@ public class DropItemContainer {
 
     public DropItem getItemData(String id) {
         return items.getOrDefault(id, null);
+    }
+
+    private static String createId() {
+        StringBuilder id = new StringBuilder(8);
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        for (int i = 0; i < 8; i++) {
+            id.append(ID_CHARACTERS[random.nextInt(ID_CHARACTERS.length)]);
+        }
+        return id.toString();
     }
 
     public void deleteItemData(String id) {

@@ -20,6 +20,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BuyInventoryListener implements Listener {
 
+    private final EnderChestPlus plugin;
     private final InventoryLoader loader;
 
     int money = 0;
@@ -70,7 +71,7 @@ public class BuyInventoryListener implements Listener {
                     data2 = loader.getInventoryData(p);
                 }
                 data2.initializeInventory(page);
-                p.openInventory(InventoryLoader.getMainInventory(data2, openMainInventoryIndex));
+                openInventoryNextTick(p, InventoryLoader.getMainInventory(data2, openMainInventoryIndex));
 
                 p.sendMessage(Chat.f("&a購入に成功しました！ 現在の所持金:{0}$",EnderChestPlus.getEconomy().getBalance(p)));
                 p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 2, 1);
@@ -87,9 +88,17 @@ public class BuyInventoryListener implements Listener {
             } else {
                 data2 = loader.getInventoryData(p);
             }
-            p.openInventory(InventoryLoader.getMainInventory(data2, openMainInventoryIndex));
+            openInventoryNextTick(p, InventoryLoader.getMainInventory(data2, openMainInventoryIndex));
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
+    }
+
+    private void openInventoryNextTick(Player player, Inventory inventory) {
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (player.isOnline()) {
+                player.openInventory(inventory);
+            }
+        });
     }
 
     private boolean costPlayer(Player p, int page) {

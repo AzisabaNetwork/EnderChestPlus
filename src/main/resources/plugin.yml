@@ -3,7 +3,7 @@ main: jp.azisaba.lgw.ecplus.EnderChestPlus
 version: ${version}
 author: siloneco
 description: ${description}
-api-version: '1.21'
+api-version: '1.21.11'
 depend:
   - Vault
 commands:

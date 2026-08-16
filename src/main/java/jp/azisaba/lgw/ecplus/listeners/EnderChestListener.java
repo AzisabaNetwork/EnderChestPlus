@@ -53,7 +53,7 @@ public class EnderChestListener implements Listener {
             String pageNumStr = Chat.r(ItemHelper.getDisplayName(item));
             pageNumStr = pageNumStr.substring(8, pageNumStr.indexOf("を購入する"));
             int pageNum = Integer.parseInt(pageNumStr);
-            p.openInventory(InventoryLoader.getBuyInventory(pageNum - 1));
+            openInventoryNextTick(p, InventoryLoader.getBuyInventory(pageNum - 1));
         } else {
             int invNum = -1;
             try {
@@ -72,7 +72,7 @@ public class EnderChestListener implements Listener {
             } else {
                 data = loader.getInventoryData(p);
             }
-            p.openInventory(data.getInventory(invNum - 1));
+            openInventoryNextTick(p, data.getInventory(invNum - 1));
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
     }
@@ -103,6 +103,8 @@ public class EnderChestListener implements Listener {
             return;
         }
 
+        e.setCancelled(true);
+
         String title = invname;
         int currentInventory = Integer.parseInt(title.substring(title.indexOf("Page") + 5)) - 1;
         int mainInventoryIndex = currentInventory / 54;
@@ -116,7 +118,7 @@ public class EnderChestListener implements Listener {
                 data = loader.getInventoryData(p);
             }
             Inventory mainInv = InventoryLoader.getMainInventory(data, mainInventoryIndex);
-            p.openInventory(mainInv);
+            openInventoryNextTick(p, mainInv);
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
     }
@@ -140,8 +142,9 @@ public class EnderChestListener implements Listener {
             return;
         }
 
+        e.setCancelled(true);
+
         if (e.getCursor() != null && e.getCursor().getType() != Material.AIR) {
-            e.setCancelled(true);
             p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
             return;
         }
@@ -173,7 +176,7 @@ public class EnderChestListener implements Listener {
 
         Inventory nextOpenMainInv = InventoryLoader.getMainInventory(data, nextPageIndex);
         if (nextOpenMainInv != null) {
-            p.openInventory(nextOpenMainInv);
+            openInventoryNextTick(p, nextOpenMainInv);
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         } else {
             p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
@@ -202,8 +205,9 @@ public class EnderChestListener implements Listener {
             return;
         }
 
+        e.setCancelled(true);
+
         if (e.getCursor() != null && e.getCursor().getType() != Material.AIR) {
-            e.setCancelled(true);
             p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
             return;
         }
@@ -234,8 +238,19 @@ public class EnderChestListener implements Listener {
             p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
             return;
         }
-        p.openInventory(nextInv);
+        openInventoryNextTick(p, nextInv);
         p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
+    }
+
+    private void openInventoryNextTick(Player player, Inventory inventory) {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (player.isOnline()) {
+                    player.openInventory(inventory);
+                }
+            }
+        }.runTask(plugin);
     }
 
     @EventHandler
