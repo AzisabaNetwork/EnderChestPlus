@@ -65,12 +65,10 @@ public class EnderChestListener implements Listener {
                 return;
             }
 
-            UUID looking = loader.getLookingAt(p);
-            InventoryData data;
-            if (looking != null) {
-                data = loader.getInventoryData(looking);
-            } else {
-                data = loader.getInventoryData(p);
+            InventoryData data = getInventoryData(p);
+            if (data == null) {
+                notifyInventoryLoading(p);
+                return;
             }
             openInventoryNextTick(p, data.getInventory(invNum - 1));
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
@@ -110,12 +108,10 @@ public class EnderChestListener implements Listener {
         int mainInventoryIndex = currentInventory / 54;
 
         if (clickedInv == null) {
-            InventoryData data;
-            UUID looking = loader.getLookingAt(p);
-            if (looking != null) {
-                data = loader.getInventoryData(looking);
-            } else {
-                data = loader.getInventoryData(p);
+            InventoryData data = getInventoryData(p);
+            if (data == null) {
+                notifyInventoryLoading(p);
+                return;
             }
             Inventory mainInv = InventoryLoader.getMainInventory(data, mainInventoryIndex);
             openInventoryNextTick(p, mainInv);
@@ -166,12 +162,10 @@ public class EnderChestListener implements Listener {
             nextPageIndex += 1;
         }
 
-        InventoryData data;
-        UUID looking = loader.getLookingAt(p);
-        if (looking != null) {
-            data = loader.getInventoryData(looking);
-        } else {
-            data = loader.getInventoryData(p);
+        InventoryData data = getInventoryData(p);
+        if (data == null) {
+            notifyInventoryLoading(p);
+            return;
         }
 
         Inventory nextOpenMainInv = InventoryLoader.getMainInventory(data, nextPageIndex);
@@ -219,12 +213,10 @@ public class EnderChestListener implements Listener {
             addNum = -1;
         }
 
-        InventoryData data;
-        UUID looking = loader.getLookingAt(p);
-        if (looking != null) {
-            data = loader.getInventoryData(looking);
-        } else {
-            data = loader.getInventoryData(p);
+        InventoryData data = getInventoryData(p);
+        if (data == null) {
+            notifyInventoryLoading(p);
+            return;
         }
 
         int nextInvNum = currentInventory;
@@ -251,6 +243,16 @@ public class EnderChestListener implements Listener {
                 }
             }
         }.runTask(plugin);
+    }
+
+    private InventoryData getInventoryData(Player player) {
+        UUID looking = loader.getLookingAt(player);
+        return loader.getInventoryData(looking != null ? looking : player.getUniqueId());
+    }
+
+    private void notifyInventoryLoading(Player player) {
+        player.sendMessage(Chat.f("&eエンダーチェストのデータを読み込み中です。しばらくしてからもう一度お試しください。"));
+        player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
     }
 
     @EventHandler
