@@ -128,11 +128,89 @@ public class InventoryData {
 
     public static String sanitizeLegacyYaml(String yaml) {
         if (yaml == null || yaml.isBlank()) return yaml;
-        // Fix empty strings in PublicBukkitValues (and other namespaced YAML mappings) that cause Paper 1.21's
-        // CraftNBTTagConfigSerializer to crash:
-        // Brigadier's TagParser throws CommandSyntaxException on 0-length strings.
-        // Replacing empty values with '""' (quoted empty string in SNBT) allows TagParser to parse them cleanly as StringTag("").
-        return yaml.replaceAll("(?m)(^\\s*[\"']?[a-zA-Z0-9_.-]+:[a-zA-Z0-9_.-/]+[\"']?\\s*:\\s*)(?:\"\"|''|)\\s*$", "$1'\"\"'");
+        String[] lines = yaml.split("\r?\n", -1);
+        StringBuilder sb = new StringBuilder(yaml.length() + 256);
+        boolean inPdc = false;
+        int pdcIndent = -1;
+
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            String trimmed = line.trim();
+
+            if (inPdc) {
+                int currentIndent = countLeadingSpaces(line);
+                if (!trimmed.isEmpty() && currentIndent <= pdcIndent) {
+                    inPdc = false;
+                    pdcIndent = -1;
+                } else if (!trimmed.isEmpty()) {
+                    line = sanitizePdcLine(line);
+                }
+            }
+
+            if (!inPdc && trimmed.startsWith("PublicBukkitValues:")) {
+                inPdc = true;
+                pdcIndent = countLeadingSpaces(line);
+            }
+
+            sb.append(line);
+            if (i < lines.length - 1) {
+                sb.append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private static int countLeadingSpaces(String s) {
+        int count = 0;
+        while (count < s.length() && s.charAt(count) == ' ') count++;
+        return count;
+    }
+
+    private static String sanitizePdcLine(String line) {
+        int sepIdx = -1;
+        boolean inQuotes = false;
+        char quoteChar = 0;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (!inQuotes && (c == '"' || c == '\'')) {
+                inQuotes = true;
+                quoteChar = c;
+            } else if (inQuotes && c == quoteChar) {
+                inQuotes = false;
+            } else if (!inQuotes && c == ':' && (i + 1 == line.length() || Character.isWhitespace(line.charAt(i + 1)))) {
+                sepIdx = i;
+                break;
+            }
+        }
+        if (sepIdx < 0) return line;
+
+        String prefix = line.substring(0, sepIdx + 1);
+        String value = line.substring(sepIdx + 1).trim();
+
+        if (value.isEmpty() || value.equals("\"\"") || value.equals("''")) {
+            return prefix + " '\"\"'";
+        }
+
+        if (value.startsWith("'\"") && value.endsWith("\"'")) {
+            return line;
+        }
+
+        // Check if array or compound
+        if (value.startsWith("[") || value.startsWith("{")) {
+            return line;
+        }
+
+        // Extract inner content if quoted
+        String content = value;
+        if (content.startsWith("\"") && content.endsWith("\"") && content.length() >= 2) {
+            content = content.substring(1, content.length() - 1);
+        } else if (content.startsWith("'") && content.endsWith("'") && content.length() >= 2) {
+            content = content.substring(1, content.length() - 1);
+        }
+
+        // Escape single quotes for YAML single-quoted string
+        content = content.replace("'", "''");
+        return prefix + " '\"" + content + "\"'";
     }
 
     private static void fixLegacyContainerItem(ItemStack item, YamlConfiguration config, String path) {
@@ -198,6 +276,18 @@ public class InventoryData {
     private boolean repairCorruptedContainersFromYaml() {
         File file = new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml");
         if (!file.isFile()) return false;
+
+        boolean hasPotentialCorrupted = false;
+        for (Inventory inventory : inventories.values()) {
+            for (ItemStack item : inventory.getContents()) {
+                if (item != null && item.getType() != Material.AIR && item.getItemMeta() instanceof BlockStateMeta) {
+                    hasPotentialCorrupted = true;
+                    break;
+                }
+            }
+            if (hasPotentialCorrupted) break;
+        }
+        if (!hasPotentialCorrupted) return false;
 
         try {
             String yaml = Files.readString(file.toPath(), StandardCharsets.UTF_8);

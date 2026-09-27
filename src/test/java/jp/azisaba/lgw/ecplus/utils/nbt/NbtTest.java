@@ -207,6 +207,57 @@ public class NbtTest {
         assertTrue(sanitized.contains("\"custom:empty3\": '\"\"'"));
         assertTrue(sanitized.contains("'custom:empty4': '\"\"'"));
         assertTrue(sanitized.contains("custom:empty5: '\"\"'"));
-        assertTrue(sanitized.contains("\"mythicmobs:type\": \"SWORD\""));
+        assertTrue(sanitized.contains("\"mythicmobs:type\": '\"SWORD\"'"));
+    }
+
+    @Test
+    public void testCraftNbtTagConfigSerializerCompatibility() throws Exception {
+        java.io.File serverJar = new java.io.File("C:\\Users\\user\\Downloads\\1.21.11\\versions\\1.21.11\\paper-1.21.11.jar");
+        if (!serverJar.exists()) {
+            serverJar = new java.io.File("C:\\Users\\user\\Desktop\\servers\\main\\paper-1.21.11-132.jar");
+        }
+        if (!serverJar.exists()) {
+            return;
+        }
+
+        java.util.List<java.net.URL> urls = new java.util.ArrayList<>();
+        urls.add(serverJar.toURI().toURL());
+        java.io.File libDir = new java.io.File("C:\\Users\\user\\Desktop\\servers\\main\\libraries");
+        if (libDir.exists()) {
+            java.nio.file.Files.walk(libDir.toPath())
+                    .filter(p -> p.toString().endsWith(".jar"))
+                    .forEach(p -> {
+                        try {
+                            urls.add(p.toUri().toURL());
+                        } catch (Exception ignored) {}
+                    });
+        }
+        java.net.URLClassLoader ucl = new java.net.URLClassLoader(urls.toArray(new java.net.URL[0]), getClass().getClassLoader());
+        Class<?> serializerClass = Class.forName("org.bukkit.craftbukkit.util.CraftNBTTagConfigSerializer", true, ucl);
+        java.lang.reflect.Method deserialize = serializerClass.getMethod("deserialize", Object.class);
+
+        String yamlInput = "PublicBukkitValues:\n" +
+                "  \"custom:empty\": \"\"\n" +
+                "  \"custom:blank\": ''\n" +
+                "  \"custom:null\": \n" +
+                "  \"custom:color\": \"§aテスト\"\n" +
+                "  \"custom:colon\": \"foo:bar\"\n" +
+                "  \"custom:space\": \"hello world\"\n" +
+                "  \"custom:number\": 123\n" +
+                "  \"custom:bool\": true\n" +
+                "  \"custom:float\": 1.5\n";
+
+        String sanitized = jp.azisaba.lgw.ecplus.InventoryData.sanitizeLegacyYaml(yamlInput);
+
+        org.bukkit.configuration.file.YamlConfiguration config = new org.bukkit.configuration.file.YamlConfiguration();
+        config.loadFromString(sanitized);
+
+        org.bukkit.configuration.ConfigurationSection sec = config.getConfigurationSection("PublicBukkitValues");
+        assertNotNull(sec);
+        java.util.Map<String, Object> map = sec.getValues(false);
+
+        Object nbtResult = deserialize.invoke(null, map);
+        assertNotNull(nbtResult);
     }
 }
+
