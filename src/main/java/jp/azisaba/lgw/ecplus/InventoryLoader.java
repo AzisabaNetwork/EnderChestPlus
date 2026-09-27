@@ -1,5 +1,6 @@
 package jp.azisaba.lgw.ecplus;
 
+import jp.azisaba.lgw.ecplus.listeners.InventoryOpenListener;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import jp.azisaba.lgw.ecplus.utils.ItemHelper;
 import lombok.RequiredArgsConstructor;
@@ -166,8 +167,38 @@ public class InventoryLoader {
         loadInventoryData(p.getUniqueId());
     }
 
+    public boolean isInventoryOpen(UUID uuid) {
+        Player p = Bukkit.getPlayer(uuid);
+        if (p != null && p.isOnline()) {
+            String title = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
+            if (title.startsWith(EnderChestPlus.enderChestTitlePrefix)) {
+                return true;
+            }
+        }
+        for (Map.Entry<Player, UUID> entry : adminLookingAt.entrySet()) {
+            if (uuid.equals(entry.getValue())) {
+                Player admin = entry.getKey();
+                if (admin.isOnline()) {
+                    String title = InventoryOpenListener.getPlayerOpenInventoryTitle(admin);
+                    if (title.startsWith(EnderChestPlus.enderChestTitlePrefix)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     public InventoryData loadInventoryData(UUID uuid) {
-        return invs.computeIfAbsent(uuid, key -> new InventoryData(key, database));
+        if (isInventoryOpen(uuid)) {
+            InventoryData current = invs.get(uuid);
+            if (current != null) {
+                return current;
+            }
+        }
+        InventoryData data = new InventoryData(uuid, database);
+        invs.put(uuid, data);
+        return data;
     }
 
     /**
@@ -197,11 +228,14 @@ public class InventoryLoader {
                         processed++;
                     }
                 } else {
-                    loadInventoryData(uuid);
-                    if (Bukkit.getPlayer(uuid) == null) {
+                    byte[] existing = database.load(uuid);
+                    if (existing == null) {
+                        loadInventoryData(uuid);
+                        processed++;
+                    }
+                    if (Bukkit.getPlayer(uuid) == null && !isInventoryOpen(uuid)) {
                         invs.remove(uuid);
                     }
-                    processed++;
                 }
             } catch (IllegalArgumentException ignored) {
                 // Ignore non-UUID YAML files in the legacy inventory directory.
@@ -247,7 +281,7 @@ public class InventoryLoader {
             InventoryData data = entry.getValue();
             boolean success = data.save(asyncSave);
 
-            if (success && Bukkit.getPlayer(uuid) == null) {
+            if (success && Bukkit.getPlayer(uuid) == null && !isInventoryOpen(uuid)) {
                 invs.remove(uuid, data);
             }
 
@@ -257,11 +291,20 @@ public class InventoryLoader {
         return count;
     }
 
+    public void unload(UUID uuid) {
+        if (!isInventoryOpen(uuid) && Bukkit.getPlayer(uuid) == null) {
+            invs.remove(uuid);
+        }
+    }
+
     public boolean saveAndUnload(UUID uuid) {
         InventoryData data = invs.get(uuid);
-        if (data == null) return false;
+        if (data == null) {
+            invs.remove(uuid);
+            return false;
+        }
         boolean saved = data.save(false);
-        if (saved) invs.remove(uuid, data);
+        invs.remove(uuid);
         return saved;
     }
 

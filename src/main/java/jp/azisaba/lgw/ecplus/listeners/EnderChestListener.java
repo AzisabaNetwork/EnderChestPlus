@@ -72,6 +72,11 @@ public class EnderChestListener implements Listener {
             } else {
                 data = loader.getInventoryData(p);
             }
+            if (data == null) {
+                p.closeInventory();
+                p.sendMessage(Chat.f("&cデータが見つかりませんでした。再度お試しください。"));
+                return;
+            }
             p.openInventory(data.getInventory(invNum - 1));
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
@@ -115,6 +120,7 @@ public class EnderChestListener implements Listener {
             } else {
                 data = loader.getInventoryData(p);
             }
+            if (data == null) return;
             Inventory mainInv = InventoryLoader.getMainInventory(data, mainInventoryIndex);
             p.openInventory(mainInv);
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
@@ -170,6 +176,7 @@ public class EnderChestListener implements Listener {
         } else {
             data = loader.getInventoryData(p);
         }
+        if (data == null) return;
 
         Inventory nextOpenMainInv = InventoryLoader.getMainInventory(data, nextPageIndex);
         if (nextOpenMainInv != null) {
@@ -222,6 +229,7 @@ public class EnderChestListener implements Listener {
         } else {
             data = loader.getInventoryData(p);
         }
+        if (data == null) return;
 
         int nextInvNum = currentInventory;
         Inventory nextInv = null;
@@ -240,20 +248,39 @@ public class EnderChestListener implements Listener {
 
     @EventHandler
     public void onCloseInventory(InventoryCloseEvent e) {
-        if (!(e.getPlayer() instanceof Player)) {
+        if (!(e.getPlayer() instanceof Player p)) {
             return;
         }
-        Player p = (Player) e.getPlayer();
+        String closedTitle = Chat.legacy(e.getView().title());
+        if (!closedTitle.startsWith(EnderChestPlus.enderChestTitlePrefix)) {
+            return;
+        }
 
-        if (loader.getLookingAt(p) == null) {
-            return;
-        }
+        UUID looking = loader.getLookingAt(p);
+        UUID targetUuid = (looking != null) ? looking : p.getUniqueId();
 
         new BukkitRunnable() {
             @Override
             public void run() {
-                if (p.getOpenInventory() == null) {
+                String openTitle = InventoryOpenListener.getPlayerOpenInventoryTitle(p);
+                if (p.isOnline() && openTitle.startsWith(EnderChestPlus.enderChestTitlePrefix)) {
+                    return;
+                }
+
+                if (looking != null) {
                     loader.setLookingAt(p, null);
+                }
+
+                InventoryData data = loader.getInventoryData(targetUuid);
+                if (data != null) {
+                    EnderChestPlus.newChain()
+                            .async(() -> {
+                                data.save(false);
+                                if (looking != null || !p.isOnline()) {
+                                    loader.unload(targetUuid);
+                                }
+                            })
+                            .execute();
                 }
             }
         }.runTaskLater(plugin, 1);

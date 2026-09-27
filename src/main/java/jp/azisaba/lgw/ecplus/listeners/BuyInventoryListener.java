@@ -72,6 +72,8 @@ public class BuyInventoryListener implements Listener {
                 data2.initializeInventory(page);
                 p.openInventory(InventoryLoader.getMainInventory(data2, openMainInventoryIndex));
 
+                EnderChestPlus.newChain().async(() -> data2.save(false)).execute();
+
                 p.sendMessage(Chat.f("&a購入に成功しました！ 現在の所持金:{0}$",EnderChestPlus.getEconomy().getBalance(p)));
                 p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 2, 1);
             } else {

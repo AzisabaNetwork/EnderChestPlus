@@ -57,7 +57,7 @@ public final class DatabaseManager implements AutoCloseable {
 
     public void save(UUID uuid, byte[] data) throws SQLException {
         String sql = "INSERT INTO `" + table + "` (`player_uuid`, `inventory_data`) VALUES (?, ?) "
-                + "ON DUPLICATE KEY UPDATE `inventory_data` = VALUES(`inventory_data`)";
+                + "ON DUPLICATE KEY UPDATE `inventory_data` = VALUES(`inventory_data`), `updated_at` = CURRENT_TIMESTAMP(3)";
         try (Connection connection = dataSource.getConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, uuid.toString());
             statement.setBytes(2, data);

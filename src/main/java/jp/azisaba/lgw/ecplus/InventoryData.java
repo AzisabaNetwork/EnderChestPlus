@@ -60,13 +60,6 @@ public class InventoryData {
             if (bytes != null) {
                 if (isCurrentFormat(bytes)) {
                     deserialize(bytes);
-                    try {
-                        if (repairCorruptedContainersFromYaml()) {
-                            save(false);
-                        }
-                    } catch (Throwable t) {
-                        Bukkit.getLogger().warning("[EnderChestPlus] Failed to check/repair legacy data for " + uuid + ": " + t.getMessage());
-                    }
                 } else if (loadLegacyYaml()) {
                     save(false);
                 } else {

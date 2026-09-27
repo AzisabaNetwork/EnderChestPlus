@@ -11,17 +11,22 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
+
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 @RequiredArgsConstructor
 public class ShortcutCommand implements CommandExecutor {
-    private final EnderChestPlus plugin ;
+    private final EnderChestPlus plugin;
     private final InventoryLoader loader;
     private final DropItemContainer dropItemContainer;
+    private final Set<UUID> openingPlayers = ConcurrentHashMap.newKeySet();
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
 
-        if (sender instanceof Player) {
-            Player p = (Player) sender;
+        if (sender instanceof Player p) {
             // エンダーチェストを開く
             if (!plugin.isAllowOpenEnderChest()) {
                 p.sendMessage(Chat.f("&c現在エンダーチェストは無効化されています。運営が再度有効化するまでお待ちください。"));
@@ -35,16 +40,35 @@ public class ShortcutCommand implements CommandExecutor {
                 loader.setLookingAt(p, null);
             }
 
-            InventoryData data = loader.getInventoryData(p);
-
-            // nullの場合は読み込み待ち
-            if (data == null) {
-                p.sendMessage(Chat.f("&c現在プレイヤーデータのロード中です。しばらくお待ちください..."));
+            UUID uuid = p.getUniqueId();
+            if (!openingPlayers.add(uuid)) {
                 return true;
             }
 
-            Inventory inv = InventoryLoader.getMainInventory(data, 0);
-            p.openInventory(inv);
+            EnderChestPlus.newChain()
+                    .asyncFirst(() -> {
+                        try {
+                            return loader.loadInventoryData(uuid);
+                        } catch (Exception e) {
+                            plugin.getLogger().warning("Failed to load inventory data for " + uuid + ": " + e.getMessage());
+                            return loader.getInventoryData(uuid);
+                        }
+                    })
+                    .syncLast(data -> {
+                        try {
+                            if (p.isOnline()) {
+                                if (data == null) {
+                                    p.sendMessage(Chat.f("&cインベントリデータのロードに失敗しました。時間をおいて再度お試しください。"));
+                                    return;
+                                }
+                                Inventory inv = InventoryLoader.getMainInventory(data, 0);
+                                p.openInventory(inv);
+                            }
+                        } finally {
+                            openingPlayers.remove(uuid);
+                        }
+                    })
+                    .execute();
             return true;
         }
         sender.sendMessage("このコマンドはプレイヤーのみ実行可能です。");
