@@ -30,6 +30,7 @@ public class EnderChestPlus extends JavaPlugin {
     private static File inventoryDataFile;
     private static TaskChainFactory taskChainFactory;
     private AutoSaveTask saveTask;
+    private org.bukkit.scheduler.BukkitTask migrationTask = null;
     private DatabaseManager database;
     @Getter
     private DropItemContainer dropItemContainer = null;
@@ -69,7 +70,7 @@ public class EnderChestPlus extends JavaPlugin {
             return;
         }
         loader = new InventoryLoader(this, database);
-        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+        migrationTask = getServer().getScheduler().runTaskAsynchronously(this, () -> {
             int migrated = loader.migrateLegacyYamlData();
             if (migrated > 0) getLogger().info("Migrated " + migrated + " legacy YAML inventories to MySQL.");
         });
@@ -106,6 +107,10 @@ public class EnderChestPlus extends JavaPlugin {
     @Override
     public void onDisable() {
 
+        if (migrationTask != null) {
+            migrationTask.cancel();
+            migrationTask = null;
+        }
         if (saveTask != null) saveTask.cancel();
 
         if (dropItemContainer != null) dropItemContainer.save();

@@ -186,6 +186,9 @@ public class InventoryLoader {
 
         int processed = 0;
         for (File file : files) {
+            if (!plugin.isEnabled()) {
+                break;
+            }
             String filename = file.getName();
             try {
                 UUID uuid = UUID.fromString(filename.substring(0, filename.length() - ".yml".length()));

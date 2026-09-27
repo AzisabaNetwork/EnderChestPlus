@@ -60,8 +60,12 @@ public class InventoryData {
             if (bytes != null) {
                 if (isCurrentFormat(bytes)) {
                     deserialize(bytes);
-                    if (repairCorruptedContainersFromYaml()) {
-                        save(false);
+                    try {
+                        if (repairCorruptedContainersFromYaml()) {
+                            save(false);
+                        }
+                    } catch (Throwable t) {
+                        Bukkit.getLogger().warning("[EnderChestPlus] Failed to check/repair legacy data for " + uuid + ": " + t.getMessage());
                     }
                 } else if (loadLegacyYaml()) {
                     save(false);
@@ -92,15 +96,26 @@ public class InventoryData {
         File file = new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml");
         if (!file.isFile()) return false;
         String yaml = Files.readString(file.toPath(), StandardCharsets.UTF_8);
+        yaml = sanitizeLegacyYaml(yaml);
         YamlConfiguration config = new YamlConfiguration();
-        config.loadFromString(yaml);
+        try {
+            config.loadFromString(yaml);
+        } catch (Throwable t) {
+            Bukkit.getLogger().warning("[EnderChestPlus] Failed to parse legacy YAML for " + uuid + ": " + t.getMessage());
+            return false;
+        }
         for (String pageKey : config.getKeys(false)) {
             int page = positiveInt(pageKey);
             if (page < 0 || config.getConfigurationSection(pageKey) == null) continue;
             Inventory inventory = createInventory(page);
             for (String slotKey : config.getConfigurationSection(pageKey).getKeys(false)) {
                 int slot = positiveInt(slotKey);
-                ItemStack item = config.getItemStack(pageKey + "." + slotKey);
+                ItemStack item = null;
+                try {
+                    item = config.getItemStack(pageKey + "." + slotKey);
+                } catch (Throwable t) {
+                    Bukkit.getLogger().warning("[EnderChestPlus] Could not deserialize item at " + pageKey + "." + slotKey + " for " + uuid + ": " + t.getMessage());
+                }
                 if (slot >= 0 && slot < inventory.getSize() && item != null && item.getType() != Material.AIR) {
                     fixLegacyContainerItem(item, config, pageKey + "." + slotKey);
                     inventory.setItem(slot, item);
@@ -109,6 +124,15 @@ public class InventoryData {
             inventories.put(page, inventory);
         }
         return true;
+    }
+
+    public static String sanitizeLegacyYaml(String yaml) {
+        if (yaml == null || yaml.isBlank()) return yaml;
+        // Fix empty strings in PublicBukkitValues (and other namespaced YAML mappings) that cause Paper 1.21's
+        // CraftNBTTagConfigSerializer to crash:
+        // Brigadier's TagParser throws CommandSyntaxException on 0-length strings.
+        // Replacing empty values with '""' (quoted empty string in SNBT) allows TagParser to parse them cleanly as StringTag("").
+        return yaml.replaceAll("(?m)(^\\s*[\"']?[a-zA-Z0-9_.-]+:[a-zA-Z0-9_.-/]+[\"']?\\s*:\\s*)(?:\"\"|''|)\\s*$", "$1'\"\"'");
     }
 
     private static void fixLegacyContainerItem(ItemStack item, YamlConfiguration config, String path) {
@@ -177,8 +201,14 @@ public class InventoryData {
 
         try {
             String yaml = Files.readString(file.toPath(), StandardCharsets.UTF_8);
+            yaml = sanitizeLegacyYaml(yaml);
             YamlConfiguration config = new YamlConfiguration();
-            config.loadFromString(yaml);
+            try {
+                config.loadFromString(yaml);
+            } catch (Throwable t) {
+                Bukkit.getLogger().warning("[EnderChestPlus] Could not parse legacy YAML configuration for " + uuid + ": " + t.getMessage());
+                return false;
+            }
 
             boolean anyRepaired = false;
 

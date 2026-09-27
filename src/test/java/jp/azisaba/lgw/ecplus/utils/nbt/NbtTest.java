@@ -188,4 +188,25 @@ public class NbtTest {
         assertNotNull(verifiedSoulbound);
         assertEquals("4ed4b1f8-2e92-4eca-aed6-339bffc7c3f7", verifiedSoulbound.getString("Owner"));
     }
+
+    @Test
+    public void testSanitizeLegacyYaml() {
+        String input = "meta:\n" +
+                "  ==: ItemMeta\n" +
+                "  PublicBukkitValues:\n" +
+                "    \"custom:empty1\": \"\"\n" +
+                "    \"custom:empty2\": ''\n" +
+                "    \"custom:empty3\": \n" +
+                "    'custom:empty4': \"\"\n" +
+                "    custom:empty5: \"\"\n" +
+                "    \"mythicmobs:type\": \"SWORD\"\n";
+
+        String sanitized = jp.azisaba.lgw.ecplus.InventoryData.sanitizeLegacyYaml(input);
+        assertTrue(sanitized.contains("\"custom:empty1\": '\"\"'"));
+        assertTrue(sanitized.contains("\"custom:empty2\": '\"\"'"));
+        assertTrue(sanitized.contains("\"custom:empty3\": '\"\"'"));
+        assertTrue(sanitized.contains("'custom:empty4': '\"\"'"));
+        assertTrue(sanitized.contains("custom:empty5: '\"\"'"));
+        assertTrue(sanitized.contains("\"mythicmobs:type\": \"SWORD\""));
+    }
 }
