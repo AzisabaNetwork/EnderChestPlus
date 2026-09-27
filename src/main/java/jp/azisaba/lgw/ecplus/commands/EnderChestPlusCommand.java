@@ -1,6 +1,8 @@
 package jp.azisaba.lgw.ecplus.commands;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -16,45 +18,39 @@ import me.kbrewster.exceptions.APIException;
 import me.kbrewster.exceptions.InvalidPlayerException;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.InventoryView;
 
 @RequiredArgsConstructor
-public class EnderChestPlusCommand implements CommandExecutor {
+public class EnderChestPlusCommand implements TabExecutor {
 
     private final EnderChestPlus plugin;
     private final InventoryLoader loader;
 
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
-        if (!(sender instanceof Player)) {
-            return true;
-        }
-        Player p = (Player) sender;
-
         if (args.length <= 0) {
-            sendUsage(p, label);
+            sendUsage(sender, label);
             return true;
         }
 
-        if (args[0].equals("save")) {
+        if (args[0].equalsIgnoreCase("save")) {
             EnderChestPlus.newChain()
-                    .sync(() -> p.sendMessage(Chat.f("&e非同期でセーブしています...")))
+                    .sync(() -> sender.sendMessage(Chat.f("&e非同期でセーブしています...")))
                     .asyncFirst(() -> loader.saveAllInventoryData(false))
                     .asyncLast((count) -> {
                         plugin.getLogger().info(Chat.f("{0}人のエンダーチェストを保存しました。", count));
-                        p.sendMessage(Chat.f("&a{0}人のエンダーチェストを保存しました。", count));
+                        sender.sendMessage(Chat.f("&a{0}人のエンダーチェストを保存しました。", count));
                     }).execute();
             return true;
         } else if (args[0].equalsIgnoreCase("enable")) {
             plugin.setAllowOpenEnderChest(true);
-            p.sendMessage(Chat.f("&eエンダーチェストを&a開ける&eように設定しました"));
+            sender.sendMessage(Chat.f("&eエンダーチェストを&a開ける&eように設定しました"));
             return true;
         } else if (args[0].equalsIgnoreCase("disable")) {
             plugin.setAllowOpenEnderChest(false);
-            p.sendMessage(Chat.f("&eエンダーチェストを&c開けない&eように設定しました"));
+            sender.sendMessage(Chat.f("&eエンダーチェストを&c開けない&eように設定しました"));
             return true;
         } else if (args[0].equalsIgnoreCase("openingPlayer")) {
             List<String> playerNames = Bukkit.getOnlinePlayers().stream()
@@ -65,12 +61,16 @@ public class EnderChestPlusCommand implements CommandExecutor {
                     .collect(Collectors.toList());
 
             if (playerNames.isEmpty()) {
-                p.sendMessage(Chat.f("&a開いているプレイヤーはいませんでした。"));
+                sender.sendMessage(Chat.f("&a開いているプレイヤーはいませんでした。"));
             } else {
-                p.sendMessage(Chat.f("&a開いているプレイヤー: &e{0}", String.join(Chat.f("&7, &e"), playerNames)));
+                sender.sendMessage(Chat.f("&a開いているプレイヤー: &e{0}", String.join(Chat.f("&7, &e"), playerNames)));
             }
             return true;
         } else if (args[0].equalsIgnoreCase("open")) {
+            if (!(sender instanceof Player p)) {
+                sender.sendMessage(Chat.f("&cこのコマンドはプレイヤーのみ実行できます。"));
+                return true;
+            }
             if (!plugin.isAllowOpenEnderChest()) {
                 p.sendMessage(Chat.f("&c現在エンダーチェストは無効化されています。運営が再度有効化するまでお待ちください。"));
                 if (p.hasPermission("enderchestplus.command.enderchestplus")) {
@@ -160,17 +160,126 @@ public class EnderChestPlusCommand implements CommandExecutor {
                     sender.sendMessage(Chat.f("&a移行が完了しました！"));
                 }).execute();
             return true;
+        } else if (args[0].equalsIgnoreCase("remigrate")) {
+            if (args.length <= 1) {
+                sender.sendMessage(Chat.f("&cUsage: /" + label + " remigrate <Player/UUID|all>"));
+                return true;
+            }
+
+            if (args[1].equalsIgnoreCase("all")) {
+                List<Player> openingPlayers = Bukkit.getOnlinePlayers().stream()
+                        .filter(player -> {
+                            String inv = InventoryOpenListener.getPlayerOpenInventoryTitle(player);
+                            return inv.startsWith(EnderChestPlus.enderChestTitlePrefix);
+                        })
+                        .collect(Collectors.toList());
+
+                if (!openingPlayers.isEmpty()) {
+                    sender.sendMessage(Chat.f("&cエンダーチェストを開いているプレイヤーがいるため、一括再インポートを実行できません。"));
+                    sender.sendMessage(Chat.f("&c開いているプレイヤー: &e{0}", openingPlayers.stream().map(Player::getName).collect(Collectors.joining(", "))));
+                    return true;
+                }
+
+                EnderChestPlus.newChain()
+                        .sync(() -> sender.sendMessage(Chat.f("&e全プレイヤーのレガシーYAMLデータを再インポートしています...")))
+                        .asyncFirst(() -> loader.migrateLegacyYamlData(true))
+                        .syncLast((count) -> {
+                            sender.sendMessage(Chat.f("&a{0}件のレガシーデータを再インポートしてMySQLに保存しました。", count));
+                            plugin.getLogger().info(Chat.f("{0}件のレガシーデータを再インポートしました。", count));
+                        }).execute();
+                return true;
+            }
+
+            EnderChestPlus.newChain()
+                    .async(() -> {
+                        UUID uuid = null;
+                        try {
+                            uuid = UUID.fromString(args[1]);
+                        } catch (IllegalArgumentException ignored) {
+                        }
+                        if (uuid == null) {
+                            try {
+                                uuid = UUIDUtils.getUUID(args[1]);
+                            } catch (APIException e) {
+                                sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(MojangAPIのレートリミット)"));
+                                return;
+                            } catch (IOException e) {
+                                sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(不明なエラー)"));
+                                return;
+                            } catch (InvalidPlayerException e) {
+                                sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(不明なプレイヤー)"));
+                                return;
+                            }
+                        }
+
+                        if (uuid == null) {
+                            sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(不明なプレイヤー)"));
+                            return;
+                        }
+
+                        Player targetPlayer = Bukkit.getPlayer(uuid);
+                        if (targetPlayer != null) {
+                            String inv = InventoryOpenListener.getPlayerOpenInventoryTitle(targetPlayer);
+                            if (inv.startsWith(EnderChestPlus.enderChestTitlePrefix)) {
+                                sender.sendMessage(Chat.f("&c対象のプレイヤーがエンダーチェストを開いているため、再インポートを実行できません"));
+                                return;
+                            }
+                        }
+
+                        sender.sendMessage(Chat.f("&eレガシーYAMLデータを再インポートしています..."));
+                        boolean success = loader.remigrate(uuid);
+                        if (success) {
+                            sender.sendMessage(Chat.f("&a再インポートが完了しました！(UUID: {0})", uuid));
+                        } else {
+                            sender.sendMessage(Chat.f("&c再インポートに失敗しました。対象のレガシーYAMLファイルが存在しない可能性があります。(UUID: {0})", uuid));
+                        }
+                    }).execute();
+            return true;
         }
-        sendUsage(p, label);
+
+        sendUsage(sender, label);
         return true;
     }
 
-    private void sendUsage(Player p, String label) {
-        p.sendMessage(Chat.f("&e/{0} open <Player/UUID> &7- &aECを開きます", label) + "\n"
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
+        if (args.length == 1) {
+            return Stream.of("open", "save", "enable", "disable", "migrate", "remigrate", "openingPlayer")
+                    .filter(sub -> sub.toLowerCase().startsWith(args[0].toLowerCase()))
+                    .collect(Collectors.toList());
+        }
+        if (args.length == 2) {
+            if (args[0].equalsIgnoreCase("open") || args[0].equalsIgnoreCase("migrate")) {
+                return Bukkit.getOnlinePlayers().stream()
+                        .map(Player::getName)
+                        .filter(name -> name.toLowerCase().startsWith(args[1].toLowerCase()))
+                        .collect(Collectors.toList());
+            }
+            if (args[0].equalsIgnoreCase("remigrate")) {
+                List<String> options = new ArrayList<>();
+                options.add("all");
+                Bukkit.getOnlinePlayers().forEach(p -> options.add(p.getName()));
+                return options.stream()
+                        .filter(name -> name.toLowerCase().startsWith(args[1].toLowerCase()))
+                        .collect(Collectors.toList());
+            }
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("migrate")) {
+            return Bukkit.getOnlinePlayers().stream()
+                    .map(Player::getName)
+                    .filter(name -> name.toLowerCase().startsWith(args[2].toLowerCase()))
+                    .collect(Collectors.toList());
+        }
+        return Collections.emptyList();
+    }
+
+    private void sendUsage(CommandSender sender, String label) {
+        sender.sendMessage(Chat.f("&e/{0} open <Player/UUID> &7- &aECを開きます", label) + "\n"
             + Chat.f("&e/{0} save &7- &a非同期で全プレイヤーのECをセーブします", label) + "\n"
             + Chat.f("&e/{0} enable &7- &aエンダーチェストを有効化します", label) + "\n"
             + Chat.f("&e/{0} disable &7- &aエンダーチェストを無効化します", label) + "\n"
-            + Chat.f("&e/{0} migrate &7- &aエンダーチェストの内容を移行します", label) + "\n"
+            + Chat.f("&e/{0} migrate <from> <to> &7- &aエンダーチェストの内容を移行します", label) + "\n"
+            + Chat.f("&e/{0} remigrate <Player/UUID|all> &7- &aレガシーYAMLからECデータを再インポートします", label) + "\n"
             + Chat.f("&e/{0} openingPlayer &7- &aエンダーチェストを開いているプレイヤーを取得します", label) + "\n");
     }
 }

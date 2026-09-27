@@ -89,7 +89,9 @@ public class EnderChestPlus extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new DroppedItemListener(dropItemContainer), this);
         Bukkit.getPluginManager().registerEvents(new InventoryOpenListener(), this);
 
-        Bukkit.getPluginCommand("enderchestplus").setExecutor(new EnderChestPlusCommand(this, loader));
+        EnderChestPlusCommand enderChestPlusCommand = new EnderChestPlusCommand(this, loader);
+        Bukkit.getPluginCommand("enderchestplus").setExecutor(enderChestPlusCommand);
+        Bukkit.getPluginCommand("enderchestplus").setTabCompleter(enderChestPlusCommand);
         Bukkit.getPluginCommand("receivedropped").setExecutor(new ReceiveDroppedCommand(dropItemContainer));
         Bukkit.getPluginCommand("ec2").setExecutor(new ShortcutCommand(this, loader, dropItemContainer));
 

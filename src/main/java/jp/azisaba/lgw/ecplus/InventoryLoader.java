@@ -172,29 +172,55 @@ public class InventoryLoader {
 
     /**
      * Imports every UUID-named inventory YAML file left by versions that predate database storage.
-     * Files already present in the database are left untouched.
+     * Files already present in the database are left untouched unless force is true.
      *
      * @return the number of valid legacy inventory files processed
      */
     public int migrateLegacyYamlData() {
+        return migrateLegacyYamlData(false);
+    }
+
+    public int migrateLegacyYamlData(boolean force) {
         File[] files = EnderChestPlus.getInventoryDataFile().listFiles((directory, name) -> name.endsWith(".yml"));
         if (files == null) return 0;
 
-        int migrated = 0;
+        int processed = 0;
         for (File file : files) {
             String filename = file.getName();
             try {
                 UUID uuid = UUID.fromString(filename.substring(0, filename.length() - ".yml".length()));
-                loadInventoryData(uuid);
-                invs.remove(uuid);
-                migrated++;
+                if (force) {
+                    if (remigrate(uuid)) {
+                        processed++;
+                    }
+                } else {
+                    loadInventoryData(uuid);
+                    if (Bukkit.getPlayer(uuid) == null) {
+                        invs.remove(uuid);
+                    }
+                    processed++;
+                }
             } catch (IllegalArgumentException ignored) {
                 // Ignore non-UUID YAML files in the legacy inventory directory.
-            } catch (RuntimeException e) {
+            } catch (Exception e) {
                 plugin.getLogger().warning("Could not migrate legacy inventory " + filename + ": " + e.getMessage());
             }
         }
-        return migrated;
+        return processed;
+    }
+
+    public boolean remigrate(UUID uuid) {
+        InventoryData data = loadInventoryData(uuid);
+        try {
+            boolean success = data.reloadFromLegacyYaml();
+            if (Bukkit.getPlayer(uuid) == null) {
+                invs.remove(uuid, data);
+            }
+            return success;
+        } catch (Exception e) {
+            plugin.getLogger().warning("Could not remigrate inventory for " + uuid + ": " + e.getMessage());
+            return false;
+        }
     }
 
     public InventoryData getInventoryData(Player p) {
