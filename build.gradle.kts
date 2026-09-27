@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "net.azisaba"
-version = "1.21.11+1.3.6"
+version = "1.3.8+1.21.11"
 description = "EnderChest plugin for Azisaba Life"
 
 repositories {
@@ -29,6 +29,10 @@ dependencies {
     implementation("com.github.KevinPriv:MojangAPI:1.0")
     implementation("co.aikar:taskchain-bukkit:3.7.2")
     implementation("commons-lang:commons-lang:2.6")
+
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -53,5 +57,8 @@ tasks {
         filesMatching("plugin.yml") {
             expand(props)
         }
+    }
+    test {
+        useJUnitPlatform()
     }
 }
