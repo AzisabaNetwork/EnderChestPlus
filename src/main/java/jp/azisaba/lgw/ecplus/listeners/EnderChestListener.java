@@ -45,6 +45,33 @@ public class EnderChestListener implements Listener {
 
         e.setCancelled(true);
 
+        // Shift+click on own inventory: store the item into the first page with room
+        if (clickedInv != null && !clickedInv.equals(inv) && e.getClick().isShiftClick()) {
+            if (item == null || item.getType() == Material.AIR) {
+                return;
+            }
+            UUID target = loader.getLookingAt(p);
+            InventoryData targetData = target != null ? loader.getInventoryData(target) : loader.getInventoryData(p);
+            if (targetData == null) {
+                p.sendMessage(Chat.f("&cデータが見つかりませんでした。再度お試しください。"));
+                return;
+            }
+            int left = targetData.addItem(item);
+            if (left == item.getAmount()) {
+                p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
+                return;
+            }
+            if (left <= 0) {
+                e.setCurrentItem(null);
+            } else {
+                ItemStack rest = item.clone();
+                rest.setAmount(left);
+                e.setCurrentItem(rest);
+            }
+            p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1, 1);
+            return;
+        }
+
         if (clickedInv == null || !clickedInv.equals(inv) || item == null) {
             return;
         }

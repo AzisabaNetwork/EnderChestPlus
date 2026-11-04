@@ -54,6 +54,25 @@ public class InventoryData {
         return -1;
     }
 
+    /**
+     * Adds the item to the first pages that can hold it (merging with existing stacks).
+     *
+     * @return the amount that could not be stored (0 if everything was stored)
+     */
+    public int addItem(ItemStack item) {
+        ItemStack remaining = item.clone();
+        for (int i = 0; i < EnderChestPlus.MAX_MAIN_INVENTORY_PAGES * 54 && remaining.getAmount() > 0; i++) {
+            Inventory inventory = inventories.get(i);
+            if (inventory == null) continue;
+            Map<Integer, ItemStack> left = inventory.addItem(remaining);
+            if (left.isEmpty()) {
+                return 0;
+            }
+            remaining = left.values().iterator().next();
+        }
+        return remaining.getAmount();
+    }
+
     private void load() {
         try {
             byte[] bytes = database.load(uuid);
