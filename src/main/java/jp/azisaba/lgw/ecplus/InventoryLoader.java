@@ -247,9 +247,16 @@ public class InventoryLoader {
     }
 
     public boolean remigrate(UUID uuid) {
+        return remigrate(uuid, uuid);
+    }
+
+    /**
+     * Re-imports the legacy YAML of sourceUuid into the inventory of targetUuid.
+     */
+    public boolean remigrate(UUID uuid, UUID sourceUuid) {
         InventoryData data = loadInventoryData(uuid);
         try {
-            boolean success = data.reloadFromLegacyYaml();
+            boolean success = data.reloadFromLegacyYaml(sourceUuid);
             if (Bukkit.getPlayer(uuid) == null) {
                 invs.remove(uuid, data);
             }

@@ -1,6 +1,8 @@
 package jp.azisaba.lgw.ecplus.commands;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -162,7 +164,7 @@ public class EnderChestPlusCommand implements TabExecutor {
             return true;
         } else if (args[0].equalsIgnoreCase("remigrate")) {
             if (args.length <= 1) {
-                sender.sendMessage(Chat.f("&cUsage: /" + label + " remigrate <Player/UUID|all>"));
+                sender.sendMessage(Chat.f("&cUsage: /" + label + " remigrate <Player/UUID|all> [旧UUID/旧プレイヤー名]"));
                 return true;
             }
 
@@ -227,11 +229,37 @@ public class EnderChestPlusCommand implements TabExecutor {
                         }
 
                         sender.sendMessage(Chat.f("&eレガシーYAMLデータを再インポートしています..."));
-                        boolean success = loader.remigrate(uuid);
+                        UUID sourceUuid = uuid;
+                        if (args.length > 2) {
+                            // 明示的に旧UUID/旧プレイヤー名が指定された場合
+                            try {
+                                sourceUuid = UUID.fromString(args[2]);
+                            } catch (IllegalArgumentException e) {
+                                sourceUuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + args[2]).getBytes(StandardCharsets.UTF_8));
+                            }
+                        } else if (!new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml").isFile()) {
+                            // UUIDのファイルが無い場合、オフラインモードUUID(旧環境)を試す
+                            String name = targetPlayer != null ? targetPlayer.getName() : Bukkit.getOfflinePlayer(uuid).getName();
+                            if (name == null && !args[1].contains("-") && args[1].length() <= 16) name = args[1];
+                            if (name != null) {
+                                UUID offline = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
+                                if (new File(EnderChestPlus.getInventoryDataFile(), offline + ".yml").isFile()) {
+                                    sourceUuid = offline;
+                                    sender.sendMessage(Chat.f("&7UUIDが変更されているため、旧UUID({0})のデータを使用します。", offline));
+                                }
+                            }
+                        }
+
+                        boolean success = loader.remigrate(uuid, sourceUuid);
                         if (success) {
                             sender.sendMessage(Chat.f("&a再インポートが完了しました！(UUID: {0})", uuid));
                         } else {
                             sender.sendMessage(Chat.f("&c再インポートに失敗しました。対象のレガシーYAMLファイルが存在しない可能性があります。(UUID: {0})", uuid));
+                            File[] ymls = EnderChestPlus.getInventoryDataFile().listFiles((d, n) -> n.endsWith(".yml"));
+                            sender.sendMessage(Chat.f("&7探したファイル: &f{0}.yml &7(存在: {1})",
+                                    sourceUuid, new File(EnderChestPlus.getInventoryDataFile(), sourceUuid + ".yml").isFile()));
+                            sender.sendMessage(Chat.f("&7フォルダ: &f{0} &7(YAML数: {1})",
+                                    EnderChestPlus.getInventoryDataFile().getAbsolutePath(), ymls == null ? "フォルダなし" : ymls.length));
                         }
                     }).execute();
             return true;

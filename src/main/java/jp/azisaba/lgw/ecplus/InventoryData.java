@@ -94,10 +94,18 @@ public class InventoryData {
     }
 
     public boolean reloadFromLegacyYaml() throws IOException, InvalidConfigurationException {
-        File file = new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml");
+        return reloadFromLegacyYaml(uuid);
+    }
+
+    /**
+     * Reloads this inventory from the legacy YAML file of the given source UUID
+     * (useful when the player's UUID changed, e.g. offline-mode UUID -> Mojang UUID).
+     */
+    public boolean reloadFromLegacyYaml(UUID sourceUuid) throws IOException, InvalidConfigurationException {
+        File file = new File(EnderChestPlus.getInventoryDataFile(), sourceUuid + ".yml");
         if (!file.isFile()) return false;
         inventories.clear();
-        if (loadLegacyYaml()) {
+        if (loadLegacyYaml(file)) {
             for (int i = 0; i < 18; i++) inventories.computeIfAbsent(i, this::createInventory);
             return save(false);
         }
@@ -105,7 +113,10 @@ public class InventoryData {
     }
 
     public boolean loadLegacyYaml() throws IOException, InvalidConfigurationException {
-        File file = new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml");
+        return loadLegacyYaml(new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml"));
+    }
+
+    public boolean loadLegacyYaml(File file) throws IOException, InvalidConfigurationException {
         if (!file.isFile()) return false;
         String yaml = Files.readString(file.toPath(), StandardCharsets.UTF_8);
         yaml = sanitizeLegacyYaml(yaml);
@@ -116,6 +127,7 @@ public class InventoryData {
             Bukkit.getLogger().warning("[EnderChestPlus] Failed to parse legacy YAML for " + uuid + ": " + t.getMessage());
             return false;
         }
+        Map<?, ?> raw = parseRawYaml(yaml);
         for (String pageKey : config.getKeys(false)) {
             int page = positiveInt(pageKey);
             if (page < 0 || config.getConfigurationSection(pageKey) == null) continue;
@@ -124,12 +136,12 @@ public class InventoryData {
                 int slot = positiveInt(slotKey);
                 ItemStack item = null;
                 try {
-                    item = config.getItemStack(pageKey + "." + slotKey);
+                    item = readLegacyItem(config, raw, pageKey + "." + slotKey);
                 } catch (Throwable t) {
                     Bukkit.getLogger().warning("[EnderChestPlus] Could not deserialize item at " + pageKey + "." + slotKey + " for " + uuid + ": " + t.getMessage());
                 }
                 if (slot >= 0 && slot < inventory.getSize() && item != null && item.getType() != Material.AIR) {
-                    fixLegacyContainerItem(item, config, pageKey + "." + slotKey);
+                    fixLegacyContainerItem(item, raw, pageKey + "." + slotKey);
                     inventory.setItem(slot, item);
                 }
             }
@@ -144,6 +156,7 @@ public class InventoryData {
         StringBuilder sb = new StringBuilder(yaml.length() + 256);
         boolean inPdc = false;
         int pdcIndent = -1;
+        int blockScalarIndent = -1; // indent of the key whose block scalar content is being passed through
 
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
@@ -154,8 +167,18 @@ public class InventoryData {
                 if (!trimmed.isEmpty() && currentIndent <= pdcIndent) {
                     inPdc = false;
                     pdcIndent = -1;
+                    blockScalarIndent = -1;
+                } else if (blockScalarIndent >= 0 && (trimmed.isEmpty() || currentIndent > blockScalarIndent)) {
+                    // content of a block scalar: keep as is
                 } else if (!trimmed.isEmpty()) {
-                    line = sanitizePdcLine(line);
+                    blockScalarIndent = -1;
+                    if (isBlockScalarLine(line)) {
+                        blockScalarIndent = currentIndent;
+                    } else if (isParentOfNested(lines, i, currentIndent)) {
+                        // key with nested mapping/list: keep as is
+                    } else {
+                        line = sanitizePdcLine(line);
+                    }
                 }
             }
 
@@ -172,14 +195,24 @@ public class InventoryData {
         return sb.toString();
     }
 
+    /** True if the line has an empty value and the next non-blank line is indented deeper (nested structure). */
+    private static boolean isParentOfNested(String[] lines, int index, int indent) {
+        int sepIdx = findSeparator(lines[index]);
+        if (sepIdx < 0 || !lines[index].substring(sepIdx + 1).trim().isEmpty()) return false;
+        for (int j = index + 1; j < lines.length; j++) {
+            if (lines[j].trim().isEmpty()) continue;
+            return countLeadingSpaces(lines[j]) > indent;
+        }
+        return false;
+    }
+
     private static int countLeadingSpaces(String s) {
         int count = 0;
         while (count < s.length() && s.charAt(count) == ' ') count++;
         return count;
     }
 
-    private static String sanitizePdcLine(String line) {
-        int sepIdx = -1;
+    private static int findSeparator(String line) {
         boolean inQuotes = false;
         char quoteChar = 0;
         for (int i = 0; i < line.length(); i++) {
@@ -190,10 +223,21 @@ public class InventoryData {
             } else if (inQuotes && c == quoteChar) {
                 inQuotes = false;
             } else if (!inQuotes && c == ':' && (i + 1 == line.length() || Character.isWhitespace(line.charAt(i + 1)))) {
-                sepIdx = i;
-                break;
+                return i;
             }
         }
+        return -1;
+    }
+
+    /** True if the line's value is a YAML block scalar indicator such as "|", "|-", ">" or "|2+". */
+    private static boolean isBlockScalarLine(String line) {
+        int sepIdx = findSeparator(line);
+        if (sepIdx < 0) return false;
+        return line.substring(sepIdx + 1).trim().matches("[|>][+-]?\\d?[+-]?");
+    }
+
+    private static String sanitizePdcLine(String line) {
+        int sepIdx = findSeparator(line);
         if (sepIdx < 0) return line;
 
         String prefix = line.substring(0, sepIdx + 1);
@@ -225,16 +269,114 @@ public class InventoryData {
         return prefix + " '\"" + content + "\"'";
     }
 
-    private static void fixLegacyContainerItem(ItemStack item, YamlConfiguration config, String path) {
+    /** Root NBT keys of 1.15.2 items that vanilla/Bukkit handles itself (everything else is plugin data). */
+    private static final java.util.Set<String> VANILLA_LEGACY_TAGS = java.util.Set.of(
+            "display", "Enchantments", "StoredEnchantments", "Damage", "RepairCost", "Unbreakable", "HideFlags",
+            "AttributeModifiers", "CustomModelData", "PublicBukkitValues", "BlockEntityTag", "BlockStateTag",
+            "SkullOwner", "Potion", "CustomPotionEffects", "CustomPotionColor", "Fireworks", "Explosion",
+            "Trim", "map", "map_scale_direction", "Decorations", "pages", "author", "title", "generation",
+            "resolved", "EntityTag", "BucketVariantTag", "Items", "ChargedProjectiles", "Charged",
+            "LodestonePos", "LodestoneDimension", "LodestoneTracked", "CanDestroy", "CanPlaceOn",
+            "Effects", "Recipes", "Tags");
+
+    /**
+     * Reads an item from legacy YAML and restores plugin-specific root NBT tags
+     * (e.g. StorageBox's storageBoxType) that Bukkit drops when loading a 1.15.2 item,
+     * by putting them into the item's custom_data component.
+     */
+    private static ItemStack readLegacyItem(YamlConfiguration config, Map<?, ?> raw, String path) {
+        ItemStack item = config.getItemStack(path);
+        if (item == null || item.getType() == Material.AIR) return item;
+
+        String internalBase64 = rawString(raw, path + ".meta.internal");
+        if (internalBase64 == null || internalBase64.isBlank()) return item;
+
+        try {
+            Nbt.CompoundTag legacyRoot = Nbt.readCompressed(Base64.getDecoder().decode(internalBase64));
+            Map<String, Nbt.Tag> extra = new HashMap<>();
+            for (Map.Entry<String, Nbt.Tag> entry : legacyRoot.getTags().entrySet()) {
+                if (!VANILLA_LEGACY_TAGS.contains(entry.getKey())) {
+                    extra.put(entry.getKey(), entry.getValue());
+                }
+            }
+            if (extra.isEmpty()) return item;
+            Bukkit.getLogger().info("[EnderChestPlus] Restoring legacy custom tags " + extra.keySet() + " at " + path);
+
+            Nbt.CompoundTag itemRoot = Nbt.readCompressed(item.serializeAsBytes());
+            Nbt.CompoundTag components = itemRoot.getCompound("components");
+            if (components == null) {
+                components = new Nbt.CompoundTag();
+                itemRoot.put("components", components);
+            }
+            Nbt.CompoundTag customData = components.getCompound("minecraft:custom_data");
+            if (customData == null) {
+                customData = new Nbt.CompoundTag();
+                components.put("minecraft:custom_data", customData);
+            }
+            boolean changed = false;
+            for (Map.Entry<String, Nbt.Tag> entry : extra.entrySet()) {
+                if (customData.get(entry.getKey()) == null) {
+                    customData.put(entry.getKey(), entry.getValue().copy());
+                    changed = true;
+                }
+            }
+            if (!changed) return item;
+
+            ItemStack restored = ItemStack.deserializeBytes(Nbt.writeCompressed(itemRoot));
+            Bukkit.getLogger().info("[EnderChestPlus] Restored item components after custom_data merge: " + itemRoot.getCompound("components").getTags().keySet());
+            return restored != null && restored.getType() != Material.AIR ? restored : item;
+        } catch (Exception e) {
+            Bukkit.getLogger().warning("[EnderChestPlus] Could not restore legacy custom tags at " + path + ": " + e.getMessage());
+            return item;
+        }
+    }
+
+    /**
+     * YamlConfiguration deserializes "==: ItemStack" maps into objects while parsing, so the raw
+     * "meta.internal" string is no longer reachable through it. Parse the YAML again as plain maps.
+     */
+    static Map<?, ?> parseRawYaml(String yaml) {
+        try {
+            Object loaded = new org.yaml.snakeyaml.Yaml().load(yaml);
+            return loaded instanceof Map<?, ?> m ? m : Map.of();
+        } catch (Throwable t) {
+            Bukkit.getLogger().warning("[EnderChestPlus] Could not parse raw legacy YAML: " + t.getMessage());
+            return Map.of();
+        }
+    }
+
+    private static Object rawValue(Map<?, ?> raw, String path) {
+        Object current = raw;
+        for (String part : path.split("\\.")) {
+            if (!(current instanceof Map<?, ?> map)) return null;
+            Object next = null;
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                if (String.valueOf(e.getKey()).equals(part)) {
+                    next = e.getValue();
+                    break;
+                }
+            }
+            current = next;
+        }
+        return current;
+    }
+
+    static String rawString(Map<?, ?> raw, String path) {
+        Object value = rawValue(raw, path);
+        return value == null ? null : value.toString();
+    }
+
+    private static void fixLegacyContainerItem(ItemStack item, Map<?, ?> raw, String path) {
         if (item == null) return;
         if (!(item.getItemMeta() instanceof BlockStateMeta bsm)) return;
         if (!(bsm.getBlockState() instanceof Container container)) return;
 
-        String internalBase64 = config.getString(path + ".meta.internal");
+        String internalBase64 = rawString(raw, path + ".meta.internal");
         if (internalBase64 == null || internalBase64.isBlank()) return;
 
         try {
-            int dataVersion = config.getInt(path + ".v", 3465); // default to 1.20.2 if absent
+            Object versionValue = rawValue(raw, path + ".v");
+            int dataVersion = versionValue instanceof Number n ? n.intValue() : 3465; // default to 1.20.2 if absent
             if (dataVersion <= 0) dataVersion = 3465;
 
             byte[] nbtBytes = Base64.getDecoder().decode(internalBase64);
@@ -312,6 +454,7 @@ public class InventoryData {
                 return false;
             }
 
+            Map<?, ?> raw = parseRawYaml(yaml);
             boolean anyRepaired = false;
 
             for (Map.Entry<Integer, Inventory> entry : inventories.entrySet()) {
@@ -326,18 +469,18 @@ public class InventoryData {
 
                     String slotKey = String.valueOf(slot);
                     String path = pageKey + "." + slotKey;
-                    String internalBase64 = config.getString(path + ".meta.internal");
+                    String internalBase64 = rawString(raw, path + ".meta.internal");
                     if (internalBase64 == null || internalBase64.isBlank()) continue;
 
                     if (currentItem.getItemMeta() instanceof BlockStateMeta bsm && bsm.getBlockState() instanceof Container currentContainer) {
                         if (isContainerSuspectedCorrupted(currentContainer, internalBase64)) {
-                            fixLegacyContainerItem(currentItem, config, path);
+                            fixLegacyContainerItem(currentItem, raw, path);
                             inventory.setItem(slot, currentItem);
                             anyRepaired = true;
                             Bukkit.getLogger().info("[EnderChestPlus] Auto-repaired corrupted container at page " + (page + 1) + " slot " + slot + " for " + uuid + " from legacy YAML.");
                         }
                     } else if (isTopLevelItemSuspectedCorrupted(currentItem, internalBase64)) {
-                        ItemStack restored = config.getItemStack(path);
+                        ItemStack restored = readLegacyItem(config, raw, path);
                         if (restored != null && restored.getType() != Material.AIR) {
                             inventory.setItem(slot, restored);
                             anyRepaired = true;
