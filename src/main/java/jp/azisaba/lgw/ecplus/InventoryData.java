@@ -27,7 +27,12 @@ import java.util.UUID;
 
 public class InventoryData {
     private static final int SERIALIZATION_MAGIC = 0x45435032; // ECP2
+    /** Optional trailer after the pages (older versions stop reading before it, so it stays compatible). */
+    private static final int TRAILER_MAGIC = 0x45435046; // ECPF
+    /** The PDC of items imported from legacy YAML has been repaired (see {@link LegacyPdcRepair}). */
+    private static final int FLAG_LEGACY_PDC_REPAIRED = 1;
     private final Map<Integer, Inventory> inventories = new HashMap<>();
+    private int flags = 0;
     private final UUID uuid;
     private final DatabaseManager database;
 
@@ -76,9 +81,13 @@ public class InventoryData {
     private void load() {
         try {
             byte[] bytes = database.load(uuid);
+            if (bytes == null) flags |= FLAG_LEGACY_PDC_REPAIRED; // nothing imported before the repair existed
             if (bytes != null) {
                 if (isCurrentFormat(bytes)) {
                     deserialize(bytes);
+                    int repaired = repairLegacyPdcOnce();
+                    repaired += repairLegacyStorageBoxes();
+                    if (repaired > 0) save(false);
                 } else if (loadLegacyYaml()) {
                     save(false);
                 } else {
@@ -116,8 +125,26 @@ public class InventoryData {
         return loadLegacyYaml(new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml"));
     }
 
+    /**
+     * Data imported from legacy YAML before {@link LegacyPdcRepair} existed has quote-wrapped PDC values.
+     * They are repaired once per player; afterwards the flag keeps quotes that plugins write on purpose.
+     *
+     * @return the number of repaired items (the flag change alone also counts, so it gets saved)
+     */
+    private int repairLegacyPdcOnce() {
+        if ((flags & FLAG_LEGACY_PDC_REPAIRED) != 0) return 0;
+        flags |= FLAG_LEGACY_PDC_REPAIRED;
+        int repaired = 0;
+        for (Inventory inventory : inventories.values()) repaired += LegacyPdcRepair.repairInventory(inventory);
+        if (repaired > 0) {
+            Bukkit.getLogger().info("[EnderChestPlus] Repaired the legacy PDC of " + repaired + " item(s) for " + uuid + ".");
+        }
+        return repaired + 1;
+    }
+
     public boolean loadLegacyYaml(File file) throws IOException, InvalidConfigurationException {
         if (!file.isFile()) return false;
+        flags |= FLAG_LEGACY_PDC_REPAIRED; // repaired item by item below
         String yaml = Files.readString(file.toPath(), StandardCharsets.UTF_8);
         yaml = sanitizeLegacyYaml(yaml);
         YamlConfiguration config = new YamlConfiguration();
@@ -140,8 +167,18 @@ public class InventoryData {
                 } catch (Throwable t) {
                     Bukkit.getLogger().warning("[EnderChestPlus] Could not deserialize item at " + pageKey + "." + slotKey + " for " + uuid + ": " + t.getMessage());
                 }
+                if (item == null || item.getType() == Material.AIR) {
+                    // Bukkit could not read it (e.g. a shulker box with one bad item): rebuild it from the raw
+                    // NBT through the DataFixer instead of dropping it together with its contents
+                    item = readLegacyItemViaDataFixer(raw, pageKey + "." + slotKey);
+                    if (item != null) {
+                        Bukkit.getLogger().info("[EnderChestPlus] Recovered " + item.getType() + " at " + pageKey + "." + slotKey + " for " + uuid + " from raw NBT.");
+                    }
+                }
                 if (slot >= 0 && slot < inventory.getSize() && item != null && item.getType() != Material.AIR) {
                     fixLegacyContainerItem(item, raw, pageKey + "." + slotKey);
+                    ItemStack pdcFixed = LegacyPdcRepair.repair(item);
+                    if (pdcFixed != null) item = pdcFixed;
                     inventory.setItem(slot, item);
                 }
             }
@@ -247,10 +284,6 @@ public class InventoryData {
             return prefix + " '\"\"'";
         }
 
-        if (value.startsWith("'\"") && value.endsWith("\"'")) {
-            return line;
-        }
-
         // Check if array or compound
         if (value.startsWith("[") || value.startsWith("{")) {
             return line;
@@ -264,6 +297,8 @@ public class InventoryData {
             content = content.substring(1, content.length() - 1);
         }
 
+        // Every value is wrapped the same way (Paper keeps the quotes, so a value that already had them
+        // must be wrapped again); LegacyPdcRepair removes exactly one pair and restores the 1.15.2 type.
         // Escape single quotes for YAML single-quoted string
         content = content.replace("'", "''");
         return prefix + " '\"" + content + "\"'";
@@ -316,7 +351,11 @@ public class InventoryData {
             boolean changed = false;
             for (Map.Entry<String, Nbt.Tag> entry : extra.entrySet()) {
                 if (customData.get(entry.getKey()) == null) {
-                    customData.put(entry.getKey(), entry.getValue().copy());
+                    Nbt.Tag value = entry.getValue().copy();
+                    if (entry.getKey().equals("storageBoxType") && value instanceof Nbt.StringTag type) {
+                        value = new Nbt.StringTag(LegacyStorageBoxRepair.modernMaterialName(type.getValue()));
+                    }
+                    customData.put(entry.getKey(), value);
                     changed = true;
                 }
             }
@@ -329,6 +368,58 @@ public class InventoryData {
             Bukkit.getLogger().warning("[EnderChestPlus] Could not restore legacy custom tags at " + path + ": " + e.getMessage());
             return item;
         }
+    }
+
+    /**
+     * Rebuilds a legacy item from its raw YAML (type, amount, display name, lore and the "internal" NBT,
+     * which holds BlockEntityTag and plugin tags) and lets Minecraft's DataFixer upgrade it.
+     * Used when Bukkit's own deserialization fails, so a shulker box keeps its contents.
+     */
+    static ItemStack readLegacyItemViaDataFixer(Map<?, ?> raw, String path) {
+        String type = rawString(raw, path + ".type");
+        if (type == null || type.isBlank()) return null;
+        try {
+            Nbt.CompoundTag tag = new Nbt.CompoundTag();
+            String internal = rawString(raw, path + ".meta.internal");
+            if (internal != null && !internal.isBlank()) {
+                tag = Nbt.readCompressed(Base64.getDecoder().decode(internal));
+            }
+            Nbt.CompoundTag display = tag.getCompound("display");
+            if (display == null) display = new Nbt.CompoundTag();
+            String name = rawString(raw, path + ".meta.display-name");
+            if (name != null && display.get("Name") == null) display.putString("Name", jsonText(name));
+            if (rawValue(raw, path + ".meta.lore") instanceof java.util.List<?> lore && display.get("Lore") == null) {
+                Nbt.ListTag loreTag = new Nbt.ListTag();
+                for (Object line : lore) loreTag.add(new Nbt.StringTag(jsonText(String.valueOf(line))));
+                display.put("Lore", loreTag);
+            }
+            if (!display.getTags().isEmpty()) tag.put("display", display);
+            // PDC is not part of "internal": take it from the YAML so the rebuilt item keeps it
+            Object pdc = rawValue(raw, path + ".meta.PublicBukkitValues");
+            if (pdc instanceof Map<?, ?> && tag.get("PublicBukkitValues") == null) {
+                tag.put("PublicBukkitValues", LegacyPdcRepair.fromRawYaml(pdc));
+            }
+
+            Object amount = rawValue(raw, path + ".amount");
+            Object version = rawValue(raw, path + ".v");
+            Nbt.CompoundTag item = new Nbt.CompoundTag();
+            item.putString("id", "minecraft:" + type.toLowerCase(java.util.Locale.ROOT));
+            item.putByte("Count", (byte) (amount instanceof Number n ? n.intValue() : 1));
+            if (!tag.getTags().isEmpty()) item.put("tag", tag);
+            item.putInt("DataVersion", version instanceof Number n && n.intValue() > 0 ? n.intValue() : 2230); // 1.15.2
+            ItemStack restored = ItemStack.deserializeBytes(Nbt.writeCompressed(item));
+            return restored == null || restored.getType() == Material.AIR ? null : restored;
+        } catch (Throwable t) {
+            Bukkit.getLogger().warning("[EnderChestPlus] Could not rebuild legacy item at " + path + " from raw NBT: " + t.getMessage());
+            return null;
+        }
+    }
+
+    /** 1.15.2 stores display names as JSON text; older YAML may hold legacy "§" text instead. */
+    private static String jsonText(String value) {
+        String trimmed = value.trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("\"")) return value;
+        return "{\"text\":\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
     }
 
     /**
@@ -427,87 +518,130 @@ public class InventoryData {
         }
     }
 
-    private boolean repairCorruptedContainersFromYaml() {
-        File file = new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml");
-        if (!file.isFile()) return false;
-
-        boolean hasPotentialCorrupted = false;
+    /**
+     * Gives StorageBoxes that lost their NBT in an earlier migration their legacy tags back
+     * (see {@link LegacyStorageBoxRepair}). The legacy YAML is read only when a suspicious box exists.
+     *
+     * @return the number of repaired boxes
+     */
+    int repairLegacyStorageBoxes() {
+        boolean suspicious = false;
         for (Inventory inventory : inventories.values()) {
             for (ItemStack item : inventory.getContents()) {
-                if (item != null && item.getType() != Material.AIR && item.getItemMeta() instanceof BlockStateMeta) {
-                    hasPotentialCorrupted = true;
+                if (LegacyStorageBoxRepair.mayNeedRepair(item)) {
+                    suspicious = true;
                     break;
                 }
             }
-            if (hasPotentialCorrupted) break;
+            if (suspicious) break;
         }
-        if (!hasPotentialCorrupted) return false;
+        if (!suspicious) return 0;
 
-        try {
-            String yaml = Files.readString(file.toPath(), StandardCharsets.UTF_8);
-            yaml = sanitizeLegacyYaml(yaml);
-            YamlConfiguration config = new YamlConfiguration();
+        Map<String, Nbt.CompoundTag> legacy = new HashMap<>();
+        for (File file : legacyYamlCandidates()) {
             try {
-                config.loadFromString(yaml);
-            } catch (Throwable t) {
-                Bukkit.getLogger().warning("[EnderChestPlus] Could not parse legacy YAML configuration for " + uuid + ": " + t.getMessage());
-                return false;
+                legacy.putAll(LegacyStorageBoxRepair.indexLegacyBoxes(
+                        parseRawYaml(sanitizeLegacyYaml(Files.readString(file.toPath(), StandardCharsets.UTF_8)))));
+            } catch (IOException e) {
+                Bukkit.getLogger().warning("[EnderChestPlus] Could not read " + file.getName() + ": " + e.getMessage());
             }
-
-            Map<?, ?> raw = parseRawYaml(yaml);
-            boolean anyRepaired = false;
-
-            for (Map.Entry<Integer, Inventory> entry : inventories.entrySet()) {
-                int page = entry.getKey();
-                Inventory inventory = entry.getValue();
-                String pageKey = String.valueOf(page);
-                if (config.getConfigurationSection(pageKey) == null) continue;
-
-                for (int slot = 0; slot < inventory.getSize(); slot++) {
-                    ItemStack currentItem = inventory.getItem(slot);
-                    if (currentItem == null || currentItem.getType() == Material.AIR) continue;
-
-                    String slotKey = String.valueOf(slot);
-                    String path = pageKey + "." + slotKey;
-                    String internalBase64 = rawString(raw, path + ".meta.internal");
-                    if (internalBase64 == null || internalBase64.isBlank()) continue;
-
-                    if (currentItem.getItemMeta() instanceof BlockStateMeta bsm && bsm.getBlockState() instanceof Container currentContainer) {
-                        if (isContainerSuspectedCorrupted(currentContainer, internalBase64)) {
-                            fixLegacyContainerItem(currentItem, raw, path);
-                            inventory.setItem(slot, currentItem);
-                            anyRepaired = true;
-                            Bukkit.getLogger().info("[EnderChestPlus] Auto-repaired corrupted container at page " + (page + 1) + " slot " + slot + " for " + uuid + " from legacy YAML.");
-                        }
-                    } else if (isTopLevelItemSuspectedCorrupted(currentItem, internalBase64)) {
-                        ItemStack restored = readLegacyItem(config, raw, path);
-                        if (restored != null && restored.getType() != Material.AIR) {
-                            inventory.setItem(slot, restored);
-                            anyRepaired = true;
-                            Bukkit.getLogger().info("[EnderChestPlus] Auto-repaired corrupted top-level item at page " + (page + 1) + " slot " + slot + " for " + uuid + " from legacy YAML.");
-                        }
-                    }
-                }
-            }
-
-            return anyRepaired;
-        } catch (Exception e) {
-            Bukkit.getLogger().warning("[EnderChestPlus] Could not check/repair legacy data for " + uuid + ": " + e.getMessage());
-            return false;
         }
+        if (legacy.isEmpty()) return 0;
+
+        int repaired = 0;
+        for (Map.Entry<Integer, Inventory> entry : inventories.entrySet()) {
+            int page = entry.getKey() + 1;
+            repaired += LegacyStorageBoxRepair.repairInventory(entry.getValue(), legacy, message ->
+                    Bukkit.getLogger().info("[EnderChestPlus] " + uuid + " page " + page + ": " + message));
+        }
+        return repaired;
     }
 
-    private static boolean isTopLevelItemSuspectedCorrupted(ItemStack currentItem, String internalBase64) {
+    /** The legacy YAML of this UUID, and of the offline-mode UUID of the same name (UUID changed since 1.15.2). */
+    private java.util.List<File> legacyYamlCandidates() {
+        java.util.List<File> files = new java.util.ArrayList<>();
+        File own = new File(EnderChestPlus.getInventoryDataFile(), uuid + ".yml");
+        if (own.isFile()) files.add(own);
         try {
-            byte[] nbtBytes = Base64.getDecoder().decode(internalBase64);
-            Nbt.CompoundTag root = Nbt.readCompressed(nbtBytes);
-            // If legacy YAML had PublicBukkitValues (PDC: MythicMobs, Soulbound, etc.) but DB item has empty PDC
-            if (root.getCompound("PublicBukkitValues") != null) {
-                return !currentItem.hasItemMeta() || currentItem.getItemMeta().getPersistentDataContainer().isEmpty();
+            String name = Bukkit.getOfflinePlayer(uuid).getName();
+            if (name != null) {
+                UUID offline = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
+                File old = new File(EnderChestPlus.getInventoryDataFile(), offline + ".yml");
+                if (!offline.equals(uuid) && old.isFile()) files.add(old);
             }
-            return false;
-        } catch (Exception ignored) {
-            return false;
+        } catch (RuntimeException ignored) {
+            // no server (tests) or unknown player
+        }
+        return files;
+    }
+
+    /**
+     * Finds shulker boxes (and other containers) whose contents were lost or damaged by an earlier migration,
+     * by comparing them with the same page/slot of the legacy YAML, and restores them when {@code apply} is true.
+     * <p>
+     * This is not run automatically: a container a player emptied on purpose looks the same as a broken one,
+     * so an automatic restore would duplicate items. An admin runs it for a reported player and checks the
+     * preview first.
+     *
+     * @return one line per suspicious container (restored ones when applied)
+     */
+    public java.util.List<String> repairContainersFromLegacyYaml(boolean apply) throws IOException {
+        java.util.List<String> report = new java.util.ArrayList<>();
+        java.util.List<File> files = legacyYamlCandidates();
+        if (files.isEmpty()) {
+            report.add("レガシーYAMLがありません");
+            return report;
+        }
+        File file = files.get(0);
+        String yaml = sanitizeLegacyYaml(Files.readString(file.toPath(), StandardCharsets.UTF_8));
+        Map<?, ?> raw = parseRawYaml(yaml);
+
+        for (Map.Entry<Integer, Inventory> entry : new java.util.TreeMap<>(inventories).entrySet()) {
+            int page = entry.getKey();
+            Inventory inventory = entry.getValue();
+            for (int slot = 0; slot < inventory.getSize(); slot++) {
+                ItemStack currentItem = inventory.getItem(slot);
+                if (currentItem == null || currentItem.getType() == Material.AIR) continue;
+                if (!(currentItem.getItemMeta() instanceof BlockStateMeta bsm)
+                        || !(bsm.getBlockState() instanceof Container currentContainer)) continue;
+                String path = page + "." + slot;
+                String internalBase64 = rawString(raw, path + ".meta.internal");
+                if (internalBase64 == null || internalBase64.isBlank()) continue;
+                String legacyType = rawString(raw, path + ".type");
+                if (legacyType == null || !legacyType.equalsIgnoreCase(currentItem.getType().name())) continue;
+                if (!isContainerSuspectedCorrupted(currentContainer, internalBase64)) continue;
+
+                int before = countItems(currentContainer.getInventory());
+                String where = "ページ" + (page + 1) + " スロット" + slot + " " + currentItem.getType();
+                if (!apply) {
+                    report.add(where + "（現在 " + before + "スタック → 旧データ " + legacyStackCount(internalBase64) + "スタック）");
+                    continue;
+                }
+                ItemStack repaired = currentItem.clone();
+                fixLegacyContainerItem(repaired, raw, path);
+                if (!(repaired.getItemMeta() instanceof BlockStateMeta repairedMeta)
+                        || !(repairedMeta.getBlockState() instanceof Container repairedContainer)) continue;
+                inventory.setItem(slot, repaired);
+                report.add(where + "（" + before + " → " + countItems(repairedContainer.getInventory()) + "スタック）");
+                Bukkit.getLogger().info("[EnderChestPlus] Restored container contents at page " + (page + 1) + " slot " + slot + " for " + uuid + " from " + file.getName() + ".");
+            }
+        }
+        return report;
+    }
+
+    private static int countItems(Inventory inventory) {
+        int count = 0;
+        for (ItemStack item : inventory.getContents()) if (item != null && item.getType() != Material.AIR) count++;
+        return count;
+    }
+
+    private static int legacyStackCount(String internalBase64) {
+        try {
+            Nbt.CompoundTag blockEntity = Nbt.readCompressed(Base64.getDecoder().decode(internalBase64)).getCompound("BlockEntityTag");
+            Nbt.ListTag items = blockEntity == null ? null : blockEntity.getList("Items");
+            return items == null ? 0 : items.size();
+        } catch (Exception e) {
+            return -1;
         }
     }
 
@@ -602,6 +736,9 @@ public class InventoryData {
                 }
                 inventories.put(page, inventory);
             }
+            if (input.available() >= Integer.BYTES * 2 && input.readInt() == TRAILER_MAGIC) {
+                flags = input.readInt();
+            }
         }
     }
 
@@ -629,16 +766,21 @@ public class InventoryData {
                     output.write(itemBytes);
                 }
             }
+            output.writeInt(TRAILER_MAGIC);
+            output.writeInt(flags);
         }
         return bytes.toByteArray();
     }
 
     public Inventory getInventory(int num) { return inventories.get(num); }
 
+    public java.util.Collection<Inventory> getInventories() { return java.util.List.copyOf(inventories.values()); }
+
     public void initializeInventory(int page) { inventories.put(page, createInventory(page)); }
 
     public InventoryData migrateAs(UUID targetUuid) {
         InventoryData data = new InventoryData(targetUuid, database, false);
+        data.flags = flags;
         for (Map.Entry<Integer, Inventory> entry : inventories.entrySet()) {
             Inventory copy = data.createInventory(entry.getKey());
             copy.setContents(entry.getValue().getContents());

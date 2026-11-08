@@ -13,6 +13,7 @@ import jp.azisaba.lgw.ecplus.EnderChestPlus;
 import jp.azisaba.lgw.ecplus.InventoryData;
 import jp.azisaba.lgw.ecplus.InventoryLoader;
 import jp.azisaba.lgw.ecplus.listeners.InventoryOpenListener;
+import jp.azisaba.lgw.ecplus.mythic.MythicItemRepairer;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import jp.azisaba.lgw.ecplus.utils.UUIDUtils;
 import lombok.RequiredArgsConstructor;
@@ -67,6 +68,71 @@ public class EnderChestPlusCommand implements TabExecutor {
             } else {
                 sender.sendMessage(Chat.f("&a開いているプレイヤー: &e{0}", String.join(Chat.f("&7, &e"), playerNames)));
             }
+            return true;
+        } else if (args[0].equalsIgnoreCase("mythic")) {
+            MythicItemRepairer repairer = EnderChestPlus.getMythicRepairer();
+            if (repairer == null) {
+                sender.sendMessage(Chat.f("&cMMアイテム修復は無効です。(MythicMobs未導入、またはMythicItemCompat.Enabled: false)"));
+                return true;
+            }
+            if (args.length > 1 && args[1].equalsIgnoreCase("reload")) {
+                plugin.reloadPluginConfig();
+                repairer.reload();
+                sender.sendMessage(Chat.f("&a設定と旧MM定義を読み直しました。"));
+            }
+            sender.sendMessage(Chat.f("&eMMアイテム修復の状況:"));
+            repairer.status().forEach(line -> sender.sendMessage(Chat.f("&7 - &f{0}", line)));
+            return true;
+        } else if (args[0].equalsIgnoreCase("shulkers")) {
+            if (args.length <= 1) {
+                sender.sendMessage(Chat.f("&cUsage: /" + label + " shulkers <Player/UUID> [restore]"));
+                return true;
+            }
+            boolean apply = args.length > 2 && args[2].equalsIgnoreCase("restore");
+            sender.sendMessage(Chat.f("&e旧データとシュルカーボックスの中身を照合しています..."));
+            EnderChestPlus.newChain()
+                    .asyncFirst(() -> {
+                        try {
+                            return UUIDUtils.getUUID(args[1]);
+                        } catch (Exception e) {
+                            sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。({0})", e.getClass().getSimpleName()));
+                            return null;
+                        }
+                    }).abortIfNull()
+                    .storeAsData("uuid")
+                    .asyncLast(loader::loadInventoryData)
+                    .<UUID>returnData("uuid")
+                    .syncLast(uuid -> {
+                        if (apply && loader.isInventoryOpen(uuid)) {
+                            sender.sendMessage(Chat.f("&c対象のエンダーチェストが開かれているため、復元できません。"));
+                            return;
+                        }
+                        InventoryData data = loader.getInventoryData(uuid);
+                        if (data == null) {
+                            sender.sendMessage(Chat.f("&cデータを読み込めませんでした。"));
+                            return;
+                        }
+                        List<String> report;
+                        try {
+                            report = data.repairContainersFromLegacyYaml(apply);
+                        } catch (IOException e) {
+                            sender.sendMessage(Chat.f("&cレガシーYAMLを読めませんでした: {0}", e.getMessage()));
+                            return;
+                        }
+                        if (report.isEmpty()) {
+                            sender.sendMessage(Chat.f("&a中身が失われたシュルカーボックスは見つかりませんでした。"));
+                        } else {
+                            sender.sendMessage(Chat.f(apply ? "&a{0}個のコンテナを旧データから復元しました:" : "&e中身が失われた可能性があるコンテナ {0}個:", report.size()));
+                            report.forEach(line -> sender.sendMessage(Chat.f("&7 - &f{0}", line)));
+                            if (!apply) {
+                                sender.sendMessage(Chat.f("&7プレイヤーが自分で取り出しただけの場合もあります。確認してから &e/{0} shulkers {1} restore", label, args[1]));
+                            }
+                        }
+                        if (apply && !report.isEmpty()) {
+                            EnderChestPlus.newChain().async(() -> data.save(false)).execute();
+                        }
+                        if (Bukkit.getPlayer(uuid) == null) loader.unload(uuid);
+                    }).execute();
             return true;
         } else if (args[0].equalsIgnoreCase("open")) {
             if (!(sender instanceof Player p)) {
@@ -272,16 +338,19 @@ public class EnderChestPlusCommand implements TabExecutor {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
         if (args.length == 1) {
-            return Stream.of("open", "save", "enable", "disable", "migrate", "remigrate", "openingPlayer")
+            return Stream.of("open", "save", "enable", "disable", "migrate", "remigrate", "openingPlayer", "mythic", "shulkers")
                     .filter(sub -> sub.toLowerCase().startsWith(args[0].toLowerCase()))
                     .collect(Collectors.toList());
         }
         if (args.length == 2) {
-            if (args[0].equalsIgnoreCase("open") || args[0].equalsIgnoreCase("migrate")) {
+            if (args[0].equalsIgnoreCase("open") || args[0].equalsIgnoreCase("migrate") || args[0].equalsIgnoreCase("shulkers")) {
                 return Bukkit.getOnlinePlayers().stream()
                         .map(Player::getName)
                         .filter(name -> name.toLowerCase().startsWith(args[1].toLowerCase()))
                         .collect(Collectors.toList());
+            }
+            if (args[0].equalsIgnoreCase("mythic")) {
+                return "reload".startsWith(args[1].toLowerCase()) ? List.of("reload") : Collections.emptyList();
             }
             if (args[0].equalsIgnoreCase("remigrate")) {
                 List<String> options = new ArrayList<>();
@@ -291,6 +360,9 @@ public class EnderChestPlusCommand implements TabExecutor {
                         .filter(name -> name.toLowerCase().startsWith(args[1].toLowerCase()))
                         .collect(Collectors.toList());
             }
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("shulkers")) {
+            return "restore".startsWith(args[2].toLowerCase()) ? List.of("restore") : Collections.emptyList();
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("migrate")) {
             return Bukkit.getOnlinePlayers().stream()
@@ -308,6 +380,8 @@ public class EnderChestPlusCommand implements TabExecutor {
             + Chat.f("&e/{0} disable &7- &aエンダーチェストを無効化します", label) + "\n"
             + Chat.f("&e/{0} migrate <from> <to> &7- &aエンダーチェストの内容を移行します", label) + "\n"
             + Chat.f("&e/{0} remigrate <Player/UUID|all> &7- &aレガシーYAMLからECデータを再インポートします", label) + "\n"
-            + Chat.f("&e/{0} openingPlayer &7- &aエンダーチェストを開いているプレイヤーを取得します", label) + "\n");
+            + Chat.f("&e/{0} openingPlayer &7- &aエンダーチェストを開いているプレイヤーを取得します", label) + "\n"
+            + Chat.f("&e/{0} shulkers <Player/UUID> [restore] &7- &a中身が失われたシュルカーを旧データと照合 / 復元します", label) + "\n"
+            + Chat.f("&e/{0} mythic [reload] &7- &aMMアイテム修復の状況を表示 / 旧MM定義を読み直します", label) + "\n");
     }
 }

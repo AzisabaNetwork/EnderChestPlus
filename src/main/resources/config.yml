@@ -20,3 +20,19 @@ MySQL:
   # DBが別ホストの場合はSSLの有効化を推奨します。
   UseSSL: false
   VerifyServerCertificate: true
+
+# MythicMobs 4.12 (1.15.2) 時代のMMアイテムを MythicMobs 5 で使えるように修復します（旧 MythicItemIdCompat の処理）。
+# - 旧タグ MYTHIC_TYPE が残っているアイテムに mythicmobs:type を付けます。
+# - 旧タグも失われたアイテムは、1.15.2 の MythicMobs/Items の中身を
+#   plugins/EnderChestPlus/legacy-mythic-items/ に置くと、名前・Lore・材質などから一意に判別できたものを修復します。
+#   (plugins/MythicItemIdCompat/legacy-mythic-items/ や plugins/SearchableInfiniteShop/legacy-mythic-items/ も参照します)
+# 変更後は /ecp mythic reload で反映されます。
+MythicItemCompat:
+  Enabled: true
+  # エンダーチェストのデータを読み込んだとき、全ページを修復する
+  RepairOnLoad: true
+  # ページを開いた・閉じたときに、そのページを修復する
+  RepairOnOpen: true
+  LogRepairs: false
+  # 修復しないMMID（大文字小文字は区別しない。末尾 * で前方一致）
+  ExcludedMmids: []

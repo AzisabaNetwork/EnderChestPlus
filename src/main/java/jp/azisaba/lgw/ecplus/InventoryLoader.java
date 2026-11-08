@@ -1,6 +1,7 @@
 package jp.azisaba.lgw.ecplus;
 
 import jp.azisaba.lgw.ecplus.listeners.InventoryOpenListener;
+import jp.azisaba.lgw.ecplus.mythic.MythicItemRepairer;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import jp.azisaba.lgw.ecplus.utils.ItemHelper;
 import lombok.RequiredArgsConstructor;
@@ -190,6 +191,10 @@ public class InventoryLoader {
     }
 
     public InventoryData loadInventoryData(UUID uuid) {
+        return loadInventoryData(uuid, true);
+    }
+
+    private InventoryData loadInventoryData(UUID uuid, boolean repairMythicItems) {
         if (isInventoryOpen(uuid)) {
             InventoryData current = invs.get(uuid);
             if (current != null) {
@@ -198,7 +203,23 @@ public class InventoryLoader {
         }
         InventoryData data = new InventoryData(uuid, database);
         invs.put(uuid, data);
+        if (repairMythicItems) scheduleMythicRepair(uuid, data);
         return data;
+    }
+
+    /** Runs the Mythic item repair over every page on the main thread (MythicMobs is not thread-safe). */
+    private void scheduleMythicRepair(UUID uuid, InventoryData data) {
+        MythicItemRepairer repairer = EnderChestPlus.getMythicRepairer();
+        if (repairer == null || !plugin.isEnabled()
+                || !plugin.getConfig().getBoolean("MythicItemCompat.RepairOnLoad", true)) return;
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (invs.get(uuid) != data) return; // replaced or unloaded meanwhile
+            int changes = 0;
+            for (Inventory inventory : data.getInventories()) changes += repairer.repairInventory(inventory);
+            if (changes > 0) {
+                plugin.getLogger().info("Repaired " + changes + " Mythic item field(s) in the ender chest of " + uuid + ".");
+            }
+        });
     }
 
     /**
@@ -230,7 +251,7 @@ public class InventoryLoader {
                 } else {
                     byte[] existing = database.load(uuid);
                     if (existing == null) {
-                        loadInventoryData(uuid);
+                        loadInventoryData(uuid, false);
                         processed++;
                     }
                     if (Bukkit.getPlayer(uuid) == null && !isInventoryOpen(uuid)) {

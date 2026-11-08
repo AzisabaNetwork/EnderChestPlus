@@ -7,6 +7,7 @@ import jp.azisaba.lgw.ecplus.commands.EnderChestPlusCommand;
 import jp.azisaba.lgw.ecplus.commands.ReceiveDroppedCommand;
 import jp.azisaba.lgw.ecplus.commands.ShortcutCommand;
 import jp.azisaba.lgw.ecplus.listeners.*;
+import jp.azisaba.lgw.ecplus.mythic.MythicItemRepairer;
 import jp.azisaba.lgw.ecplus.tasks.AutoSaveTask;
 import jp.azisaba.lgw.ecplus.utils.Chat;
 import lombok.Getter;
@@ -53,6 +54,9 @@ public class EnderChestPlus extends JavaPlugin {
     }
     @Getter
     private static Economy economy = null;
+    /** Null when MythicMobs is not installed or MythicItemCompat.Enabled is false. */
+    @Getter
+    private static MythicItemRepairer mythicRepairer = null;
 
     @Override
     public void onEnable() {
@@ -68,6 +72,12 @@ public class EnderChestPlus extends JavaPlugin {
             getLogger().severe("MySQL initialization failed: " + e.getMessage());
             getServer().getPluginManager().disablePlugin(this);
             return;
+        }
+        mythicRepairer = MythicItemRepairer.create(this);
+        if (mythicRepairer != null) {
+            // MythicMobs may still be registering items during startup; read the definitions afterwards
+            getServer().getScheduler().runTask(this, mythicRepairer::reload);
+            Bukkit.getPluginManager().registerEvents(new MythicRepairListener(this, mythicRepairer), this);
         }
         loader = new InventoryLoader(this, database);
         migrationTask = getServer().getScheduler().runTaskAsynchronously(this, () -> {
@@ -151,6 +161,7 @@ public class EnderChestPlus extends JavaPlugin {
 
         if (loader != null) loader.saveAllInventoryData(false);
         if (database != null) database.close();
+        mythicRepairer = null;
 
         Bukkit.getLogger().info(getName() + " disabled.");
     }
