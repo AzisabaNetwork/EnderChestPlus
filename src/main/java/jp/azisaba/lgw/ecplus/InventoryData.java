@@ -384,6 +384,9 @@ public class InventoryData {
             if (internal != null && !internal.isBlank()) {
                 tag = Nbt.readCompressed(Base64.getDecoder().decode(internal));
             }
+            if (LegacyTextRepair.repairTag(tag) > 0) {
+                MigrationLog.info("Repaired invalid text colors at " + path + " before the DataFixer.");
+            }
             Nbt.CompoundTag display = tag.getCompound("display");
             if (display == null) display = new Nbt.CompoundTag();
             String name = rawString(raw, path + ".meta.display-name");
@@ -495,6 +498,9 @@ public class InventoryData {
                     if (!entry.getKey().equals("Slot")) {
                         standalone.put(entry.getKey(), entry.getValue().copy());
                     }
+                }
+                if (LegacyTextRepair.repairTag(standalone.getCompound("tag")) > 0) {
+                    MigrationLog.info("Repaired invalid text colors in container slot " + itemSlot + " at " + path + ".");
                 }
 
                 try {
