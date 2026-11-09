@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "net.azisaba"
-version = "1.4.4+1.21.11"
+version = "1.4.5+1.21.11"
 description = "EnderChest plugin for Azisaba Life"
 
 repositories {
