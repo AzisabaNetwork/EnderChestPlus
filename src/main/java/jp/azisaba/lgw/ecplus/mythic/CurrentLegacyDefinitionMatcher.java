@@ -1,20 +1,22 @@
 package jp.azisaba.lgw.ecplus.mythic;
 
-import net.md_5.bungee.api.chat.BaseComponent;
-import net.md_5.bungee.chat.ComponentSerializer;
-import org.bukkit.ChatColor;
+import com.destroystokyo.paper.profile.ProfileProperty;
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.CustomModelData;
+import io.papermc.paper.datacomponent.item.ResolvableProfile;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Color;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
-import org.bukkit.inventory.meta.SkullMeta;
-import org.bukkit.profile.PlayerProfile;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -45,6 +47,8 @@ import java.util.stream.Stream;
  * is not that Mythic item even if its name and lore are the same.
  */
 final class CurrentLegacyDefinitionMatcher {
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.builder()
+            .character(LegacyComponentSerializer.SECTION_CHAR).hexColors().useUnusualXRepeatedCharacterHexFormat().build();
     private static final Pattern SKIN_URL = Pattern.compile("\\\"url\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
     private final Map<Signature, String> ids = new HashMap<>();
     private final Map<Signature, String> plainIds = new HashMap<>();
@@ -141,19 +145,34 @@ final class CurrentLegacyDefinitionMatcher {
     String headSkinFor(String id) { return headSkinsById.get(id); }
 
     static boolean isSkinlessHead(ItemStack item) {
-        return item != null && item.getType() == Material.PLAYER_HEAD
-                && item.getItemMeta() instanceof SkullMeta skull && Signature.itemSkinUrl(skull) == null;
+        return item != null && item.getType() == Material.PLAYER_HEAD && Signature.itemSkinUrl(item) == null;
     }
 
+    /** The legacy (integer) custom model data: the first float of the component, or null when there is none. */
+    static Integer model(ItemStack item) {
+        CustomModelData data = item == null ? null : item.getData(DataComponentTypes.CUSTOM_MODEL_DATA);
+        return data == null || data.floats().isEmpty() ? null : (int) (float) data.floats().get(0);
+    }
+
+    /**
+     * Legacy "§" text in one canonical form, so that names from items and from the old definitions
+     * compare equal however their codes were written. JSON text (left over from 1.15) is converted first.
+     */
     static String readableText(String value) {
         if (value == null) return null;
         String trimmed = value.trim();
-        if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return value;
-        try {
-            return BaseComponent.toLegacyText(ComponentSerializer.parse(value));
-        } catch (RuntimeException invalidComponent) {
-            return value;
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            try {
+                value = LEGACY.serialize(GsonComponentSerializer.gson().deserialize(value));
+            } catch (RuntimeException invalidComponent) {
+                // not JSON after all: keep it as legacy text
+            }
         }
+        return LEGACY.serialize(LEGACY.deserialize(value));
+    }
+
+    private static String readableText(Component component) {
+        return component == null ? null : readableText(LEGACY.serialize(component));
     }
 
     String summary() {
@@ -191,15 +210,16 @@ final class CurrentLegacyDefinitionMatcher {
             Traits traits = new Traits(model, Boolean.parseBoolean(String.valueOf(options.get("Unbreakable"))),
                     color(options.get("Color")));
             if (model != null) traits.models.add(model);
-            ItemMeta meta = current.getItemMeta();
-            if (meta != null && meta.hasCustomModelData()) traits.models.add(meta.getCustomModelData());
+            Integer currentModel = model(current);
+            if (currentModel != null) traits.models.add(currentModel);
             return traits;
         }
 
         boolean allows(ItemStack item) {
             ItemMeta meta = item.getItemMeta();
             if (meta == null) return true;
-            if (meta.hasCustomModelData() && !models.contains(meta.getCustomModelData())) return false;
+            Integer model = model(item);
+            if (model != null && !models.contains(model)) return false;
             if (unbreakable && !meta.isUnbreakable()) return false;
             return color == null || !(meta instanceof LeatherArmorMeta leather) || color.equals(leather.getColor());
         }
@@ -247,24 +267,24 @@ final class CurrentLegacyDefinitionMatcher {
             if (item == null || !item.hasItemMeta()) return null;
             ItemMeta meta = item.getItemMeta();
             if (meta == null) return null;
-            String name = meta.hasDisplayName() ? readableText(meta.getDisplayName()) : null;
+            String name = meta.hasDisplayName() ? readableText(meta.displayName()) : null;
             List<String> lore = null;
-            if (meta.hasLore()) {
+            List<Component> itemLore = meta.lore();
+            if (itemLore != null && !itemLore.isEmpty()) {
                 lore = new ArrayList<>();
-                for (String line : meta.getLore()) lore.add(readableText(line));
+                for (Component line : itemLore) lore.add(readableText(line));
             }
             if (name == null && (lore == null || lore.isEmpty()) && item.getType() != Material.PLAYER_HEAD) return null;
             String skinUrl = null;
             if (item.getType() == Material.PLAYER_HEAD) {
-                if (!(meta instanceof SkullMeta skull)) return null;
-                skinUrl = itemSkinUrl(skull);
+                skinUrl = itemSkinUrl(item);
                 if (skinUrl == null && name == null && (lore == null || lore.isEmpty())) return null;
             }
             return new Signature(item.getType(), name, lore == null ? Collections.emptyList() : lore, skinUrl);
         }
 
         private static String colored(Object value) {
-            return value == null ? null : ChatColor.translateAlternateColorCodes('&', String.valueOf(value));
+            return value == null ? null : readableText(translateAmpersand(String.valueOf(value)));
         }
 
         private static List<String> coloredList(Object value) {
@@ -285,11 +305,28 @@ final class CurrentLegacyDefinitionMatcher {
             }
         }
 
-        static String itemSkinUrl(SkullMeta meta) {
-            PlayerProfile profile = meta.getOwnerProfile();
+        /** Same as Bukkit's ChatColor.translateAlternateColorCodes('&', value): only valid codes are translated. */
+        private static String translateAmpersand(String value) {
+            char[] chars = value.toCharArray();
+            for (int i = 0; i < chars.length - 1; i++) {
+                if (chars[i] == '&' && "0123456789AaBbCcDdEeFfKkLlMmNnOoRrXx".indexOf(chars[i + 1]) >= 0) {
+                    chars[i] = '§';
+                    chars[i + 1] = Character.toLowerCase(chars[i + 1]);
+                }
+            }
+            return new String(chars);
+        }
+
+        static String itemSkinUrl(ItemStack item) {
+            ResolvableProfile profile = item.getData(DataComponentTypes.PROFILE);
             if (profile == null) return null;
-            URL skin = profile.getTextures().getSkin();
-            return skin == null ? null : skin.toString();
+            for (ProfileProperty property : profile.properties()) {
+                if (property.getName().equals("textures")) {
+                    String url = decodeSkinUrl(property.getValue());
+                    if (url != null) return url;
+                }
+            }
+            return null;
         }
 
         private Signature plain() {
@@ -301,7 +338,7 @@ final class CurrentLegacyDefinitionMatcher {
         private Signature withoutSkin() { return new Signature(material, name, lore, null); }
 
         private static String strip(String value) {
-            return value == null ? null : ChatColor.stripColor(value).trim();
+            return value == null ? null : PlainTextComponentSerializer.plainText().serialize(LEGACY.deserialize(value)).trim();
         }
 
         @Override public boolean equals(Object other) {

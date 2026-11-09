@@ -8,6 +8,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import io.papermc.paper.persistence.PersistentDataContainerView;
+import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.List;
@@ -159,8 +160,8 @@ final class LegacyPdcRepair {
             } else if (pdc.has(key, PersistentDataType.TAG_CONTAINER)) {
                 PersistentDataContainerView nested = pdc.get(key, PersistentDataType.TAG_CONTAINER);
                 if (nested != null && hasWrappedString(nested, depth + 1)) return true;
-            } else if (pdc.has(key, PersistentDataType.TAG_CONTAINER_ARRAY)) {
-                PersistentDataContainerView[] nested = pdc.get(key, PersistentDataType.TAG_CONTAINER_ARRAY);
+            } else if (pdc.has(key, PersistentDataType.LIST.dataContainers())) {
+                List<PersistentDataContainer> nested = pdc.get(key, PersistentDataType.LIST.dataContainers());
                 if (nested == null) continue;
                 for (PersistentDataContainerView element : nested) {
                     if (hasWrappedString(element, depth + 1)) return true;

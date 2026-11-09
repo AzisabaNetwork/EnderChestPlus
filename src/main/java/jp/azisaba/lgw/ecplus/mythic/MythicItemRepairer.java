@@ -1,5 +1,9 @@
 package jp.azisaba.lgw.ecplus.mythic;
 
+import com.destroystokyo.paper.profile.ProfileProperty;
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.CustomModelData;
+import io.papermc.paper.datacomponent.item.ResolvableProfile;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -11,18 +15,14 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BlockStateMeta;
 import org.bukkit.inventory.meta.BundleMeta;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.profile.PlayerProfile;
-import org.bukkit.profile.PlayerTextures;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import java.util.logging.Level;
@@ -183,33 +183,33 @@ public final class MythicItemRepairer {
         if (current == null) return 0;
 
         Integer model = null;
-        if (!meta.hasCustomModelData()) {
-            ItemMeta standard = current.getItemMeta();
-            if (standard != null && standard.hasCustomModelData()) model = standard.getCustomModelData();
+        if (CurrentLegacyDefinitionMatcher.model(item) == null) {
+            model = CurrentLegacyDefinitionMatcher.model(current);
             if (model == null) model = matcher.modelFor(id);
         }
         boolean missingSkin = CurrentLegacyDefinitionMatcher.isSkinlessHead(item);
-        boolean canRestoreSkin = missingSkin && current.getType() == Material.PLAYER_HEAD
-                && (current.getItemMeta() instanceof SkullMeta && !CurrentLegacyDefinitionMatcher.isSkinlessHead(current)
-                    || matcher.headSkinFor(id) != null);
-        if (!needsId && model == null && !canRestoreSkin) return 0;
+        ResolvableProfile profile = missingSkin && current.getType() == Material.PLAYER_HEAD
+                ? headProfile(current, matcher.headSkinFor(id), id) : null;
+        if (!needsId && model == null && profile == null) return 0;
 
         List<String> fixes = new ArrayList<>();
         if (needsId) {
             meta.getPersistentDataContainer().set(TYPE, PersistentDataType.STRING, id);
+            item.setItemMeta(meta);
             idRepairs++;
             fixes.add("id");
         }
+        // components are set after setItemMeta, which would otherwise overwrite them
         if (model != null) {
-            meta.setCustomModelData(model);
+            item.setData(DataComponentTypes.CUSTOM_MODEL_DATA, CustomModelData.customModelData().addFloat(model).build());
             modelRepairs++;
             fixes.add("model " + model);
         }
-        if (canRestoreSkin && restoreHeadProfile((SkullMeta) meta, current, matcher.headSkinFor(id), id)) {
+        if (profile != null) {
+            item.setData(DataComponentTypes.PROFILE, profile);
             skinRepairs++;
             fixes.add("skin");
         }
-        item.setItemMeta(meta);
         if (logRepairs) MigrationLog.info("Mythic item " + id + " repaired: " + String.join(", ", fixes));
         return fixes.size();
     }
@@ -238,23 +238,22 @@ public final class MythicItemRepairer {
         return changes;
     }
 
-    private static boolean restoreHeadProfile(SkullMeta target, ItemStack current, String oldSkinUrl, String id) {
-        PlayerProfile profile = null;
-        if (current.getItemMeta() instanceof SkullMeta skull && !CurrentLegacyDefinitionMatcher.isSkinlessHead(current))
-            profile = skull.getOwnerProfile();
-        if (profile == null && oldSkinUrl != null) {
-            try {
-                profile = Bukkit.createPlayerProfile(UUID.nameUUIDFromBytes(id.getBytes(StandardCharsets.UTF_8)));
-                PlayerTextures textures = profile.getTextures();
-                textures.setSkin(new URL(oldSkinUrl));
-                profile.setTextures(textures);
-            } catch (MalformedURLException | IllegalArgumentException ignored) {
-                return false;
-            }
+    /**
+     * The head profile to restore: the one of the current definition's item, or else one built from the
+     * old definition's skin URL. Null when neither has a skin.
+     */
+    private static ResolvableProfile headProfile(ItemStack current, String oldSkinUrl, String id) {
+        if (!CurrentLegacyDefinitionMatcher.isSkinlessHead(current)) {
+            ResolvableProfile profile = current.getData(DataComponentTypes.PROFILE);
+            if (profile != null) return profile;
         }
-        if (profile == null) return false;
-        target.setOwnerProfile(profile);
-        return true;
+        if (oldSkinUrl == null) return null;
+        String json = "{\"textures\":{\"SKIN\":{\"url\":\"" + oldSkinUrl.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}}}";
+        return ResolvableProfile.resolvableProfile()
+                .uuid(UUID.nameUUIDFromBytes(id.getBytes(StandardCharsets.UTF_8)))
+                .addProperty(new ProfileProperty("textures",
+                        Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8))))
+                .build();
     }
 
     public List<String> status() {
