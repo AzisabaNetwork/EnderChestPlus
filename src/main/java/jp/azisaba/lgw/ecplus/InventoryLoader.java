@@ -275,11 +275,15 @@ public class InventoryLoader {
      * Re-imports the legacy YAML of sourceUuid into the inventory of targetUuid.
      */
     public boolean remigrate(UUID uuid, UUID sourceUuid) {
-        InventoryData data = loadInventoryData(uuid);
+        // The Mythic repair is scheduled only after the reload: it runs on the main thread and must
+        // neither race with the reload nor repair the pages that the reload throws away.
+        InventoryData data = loadInventoryData(uuid, false);
         try {
             boolean success = data.reloadFromLegacyYaml(sourceUuid);
             if (Bukkit.getPlayer(uuid) == null) {
                 invs.remove(uuid, data);
+            } else {
+                scheduleMythicRepair(uuid, data);
             }
             return success;
         } catch (Exception e) {

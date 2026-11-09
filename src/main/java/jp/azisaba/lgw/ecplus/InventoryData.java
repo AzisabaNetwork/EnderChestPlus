@@ -31,7 +31,8 @@ public class InventoryData {
     private static final int TRAILER_MAGIC = 0x45435046; // ECPF
     /** The PDC of items imported from legacy YAML has been repaired (see {@link LegacyPdcRepair}). */
     private static final int FLAG_LEGACY_PDC_REPAIRED = 1;
-    private final Map<Integer, Inventory> inventories = new HashMap<>();
+    /** Concurrent: pages are rebuilt on async threads (remigrate) while the main thread may read them. */
+    private final Map<Integer, Inventory> inventories = new java.util.concurrent.ConcurrentHashMap<>();
     private int flags = 0;
     private final UUID uuid;
     private final DatabaseManager database;
