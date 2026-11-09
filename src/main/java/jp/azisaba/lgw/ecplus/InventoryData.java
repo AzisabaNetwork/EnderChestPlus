@@ -137,7 +137,7 @@ public class InventoryData {
         int repaired = 0;
         for (Inventory inventory : inventories.values()) repaired += LegacyPdcRepair.repairInventory(inventory);
         if (repaired > 0) {
-            Bukkit.getLogger().info("[EnderChestPlus] Repaired the legacy PDC of " + repaired + " item(s) for " + uuid + ".");
+            MigrationLog.info("Repaired the legacy PDC of " + repaired + " item(s) for " + uuid + ".");
         }
         return repaired + 1;
     }
@@ -151,7 +151,7 @@ public class InventoryData {
         try {
             config.loadFromString(yaml);
         } catch (Throwable t) {
-            Bukkit.getLogger().warning("[EnderChestPlus] Failed to parse legacy YAML for " + uuid + ": " + t.getMessage());
+            MigrationLog.warn("Failed to parse legacy YAML for " + uuid + ": " + t.getMessage());
             return false;
         }
         Map<?, ?> raw = parseRawYaml(yaml);
@@ -165,14 +165,14 @@ public class InventoryData {
                 try {
                     item = readLegacyItem(config, raw, pageKey + "." + slotKey);
                 } catch (Throwable t) {
-                    Bukkit.getLogger().warning("[EnderChestPlus] Could not deserialize item at " + pageKey + "." + slotKey + " for " + uuid + ": " + t.getMessage());
+                    MigrationLog.warn("Could not deserialize item at " + pageKey + "." + slotKey + " for " + uuid + ": " + t.getMessage());
                 }
                 if (item == null || item.getType() == Material.AIR) {
                     // Bukkit could not read it (e.g. a shulker box with one bad item): rebuild it from the raw
                     // NBT through the DataFixer instead of dropping it together with its contents
                     item = readLegacyItemViaDataFixer(raw, pageKey + "." + slotKey);
                     if (item != null) {
-                        Bukkit.getLogger().info("[EnderChestPlus] Recovered " + item.getType() + " at " + pageKey + "." + slotKey + " for " + uuid + " from raw NBT.");
+                        MigrationLog.info("Recovered " + item.getType() + " at " + pageKey + "." + slotKey + " for " + uuid + " from raw NBT.");
                     }
                 }
                 if (slot >= 0 && slot < inventory.getSize() && item != null && item.getType() != Material.AIR) {
@@ -335,7 +335,7 @@ public class InventoryData {
                 }
             }
             if (extra.isEmpty()) return item;
-            Bukkit.getLogger().info("[EnderChestPlus] Restoring legacy custom tags " + extra.keySet() + " at " + path);
+            MigrationLog.info("Restoring legacy custom tags " + extra.keySet() + " at " + path);
 
             Nbt.CompoundTag itemRoot = Nbt.readCompressed(item.serializeAsBytes());
             Nbt.CompoundTag components = itemRoot.getCompound("components");
@@ -362,10 +362,10 @@ public class InventoryData {
             if (!changed) return item;
 
             ItemStack restored = ItemStack.deserializeBytes(Nbt.writeCompressed(itemRoot));
-            Bukkit.getLogger().info("[EnderChestPlus] Restored item components after custom_data merge: " + itemRoot.getCompound("components").getTags().keySet());
+            MigrationLog.info("Restored item components after custom_data merge: " + itemRoot.getCompound("components").getTags().keySet());
             return restored != null && restored.getType() != Material.AIR ? restored : item;
         } catch (Exception e) {
-            Bukkit.getLogger().warning("[EnderChestPlus] Could not restore legacy custom tags at " + path + ": " + e.getMessage());
+            MigrationLog.warn("Could not restore legacy custom tags at " + path + ": " + e.getMessage());
             return item;
         }
     }
@@ -410,7 +410,7 @@ public class InventoryData {
             ItemStack restored = ItemStack.deserializeBytes(Nbt.writeCompressed(item));
             return restored == null || restored.getType() == Material.AIR ? null : restored;
         } catch (Throwable t) {
-            Bukkit.getLogger().warning("[EnderChestPlus] Could not rebuild legacy item at " + path + " from raw NBT: " + t.getMessage());
+            MigrationLog.warn("Could not rebuild legacy item at " + path + " from raw NBT: " + t.getMessage());
             return null;
         }
     }
@@ -431,7 +431,7 @@ public class InventoryData {
             Object loaded = new org.yaml.snakeyaml.Yaml().load(yaml);
             return loaded instanceof Map<?, ?> m ? m : Map.of();
         } catch (Throwable t) {
-            Bukkit.getLogger().warning("[EnderChestPlus] Could not parse raw legacy YAML: " + t.getMessage());
+            MigrationLog.warn("Could not parse raw legacy YAML: " + t.getMessage());
             return Map.of();
         }
     }
@@ -505,7 +505,7 @@ public class InventoryData {
                         modified = true;
                     }
                 } catch (Exception e) {
-                    Bukkit.getLogger().warning("Failed to deserialize legacy container item slot " + itemSlot + " at " + path + ": " + e.getMessage());
+                    MigrationLog.warn("Failed to deserialize legacy container item slot " + itemSlot + " at " + path + ": " + e.getMessage());
                 }
             }
 
@@ -514,7 +514,7 @@ public class InventoryData {
                 item.setItemMeta(bsm);
             }
         } catch (Exception e) {
-            Bukkit.getLogger().warning("Failed to fix legacy container item at " + path + ": " + e.getMessage());
+            MigrationLog.warn("Failed to fix legacy container item at " + path + ": " + e.getMessage());
         }
     }
 
@@ -543,7 +543,7 @@ public class InventoryData {
                 legacy.putAll(LegacyStorageBoxRepair.indexLegacyBoxes(
                         parseRawYaml(sanitizeLegacyYaml(Files.readString(file.toPath(), StandardCharsets.UTF_8)))));
             } catch (IOException e) {
-                Bukkit.getLogger().warning("[EnderChestPlus] Could not read " + file.getName() + ": " + e.getMessage());
+                MigrationLog.warn("Could not read " + file.getName() + ": " + e.getMessage());
             }
         }
         if (legacy.isEmpty()) return 0;
@@ -552,7 +552,7 @@ public class InventoryData {
         for (Map.Entry<Integer, Inventory> entry : inventories.entrySet()) {
             int page = entry.getKey() + 1;
             repaired += LegacyStorageBoxRepair.repairInventory(entry.getValue(), legacy, message ->
-                    Bukkit.getLogger().info("[EnderChestPlus] " + uuid + " page " + page + ": " + message));
+                    MigrationLog.info(uuid + " page " + page + ": " + message));
         }
         return repaired;
     }

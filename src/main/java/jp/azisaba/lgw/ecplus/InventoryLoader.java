@@ -217,7 +217,7 @@ public class InventoryLoader {
             int changes = 0;
             for (Inventory inventory : data.getInventories()) changes += repairer.repairInventory(inventory);
             if (changes > 0) {
-                plugin.getLogger().info("Repaired " + changes + " Mythic item field(s) in the ender chest of " + uuid + ".");
+                MigrationLog.info("Repaired " + changes + " Mythic item field(s) in the ender chest of " + uuid + ".");
             }
         });
     }
@@ -261,7 +261,7 @@ public class InventoryLoader {
             } catch (IllegalArgumentException ignored) {
                 // Ignore non-UUID YAML files in the legacy inventory directory.
             } catch (Exception e) {
-                plugin.getLogger().warning("Could not migrate legacy inventory " + filename + ": " + e.getMessage());
+                MigrationLog.warn("Could not migrate legacy inventory " + filename + ": " + e.getMessage());
             }
         }
         return processed;
@@ -283,7 +283,7 @@ public class InventoryLoader {
             }
             return success;
         } catch (Exception e) {
-            plugin.getLogger().warning("Could not remigrate inventory for " + uuid + ": " + e.getMessage());
+            MigrationLog.warn("Could not remigrate inventory for " + uuid + ": " + e.getMessage());
             return false;
         }
     }

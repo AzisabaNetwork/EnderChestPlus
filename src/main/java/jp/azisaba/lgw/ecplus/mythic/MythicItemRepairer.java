@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.logging.Level;
+import jp.azisaba.lgw.ecplus.MigrationLog;
 import java.util.logging.Logger;
 
 /**
@@ -164,7 +165,7 @@ public final class MythicItemRepairer {
         if (mythicId(copy.getItemMeta()) == null) return 0;
         item.setItemMeta(copy.getItemMeta());
         tagConversions++;
-        if (logRepairs) logger.info("Mythic ID restored from MYTHIC_TYPE: " + legacy.mythicType);
+        if (logRepairs) MigrationLog.info("Mythic ID restored from MYTHIC_TYPE: " + legacy.mythicType);
         return 1;
     }
 
@@ -209,7 +210,7 @@ public final class MythicItemRepairer {
             fixes.add("skin");
         }
         item.setItemMeta(meta);
-        if (logRepairs) logger.info("Mythic item " + id + " repaired: " + String.join(", ", fixes));
+        if (logRepairs) MigrationLog.info("Mythic item " + id + " repaired: " + String.join(", ", fixes));
         return fixes.size();
     }
 

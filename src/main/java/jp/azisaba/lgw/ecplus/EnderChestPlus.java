@@ -73,6 +73,7 @@ public class EnderChestPlus extends JavaPlugin {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
+        MigrationLog.init(this);
         mythicRepairer = MythicItemRepairer.create(this);
         if (mythicRepairer != null) {
             // MythicMobs may still be registering items during startup; read the definitions afterwards
@@ -82,7 +83,10 @@ public class EnderChestPlus extends JavaPlugin {
         loader = new InventoryLoader(this, database);
         migrationTask = getServer().getScheduler().runTaskAsynchronously(this, () -> {
             int migrated = loader.migrateLegacyYamlData();
-            if (migrated > 0) getLogger().info("Migrated " + migrated + " legacy YAML inventories to MySQL.");
+            if (migrated > 0) {
+                MigrationLog.info("Migrated " + migrated + " legacy YAML inventories to MySQL.");
+                getLogger().info("Migrated " + migrated + " legacy YAML inventories to MySQL. Details: " + MigrationLog.path());
+            }
         });
 
         dropItemContainer = new DropItemContainer(this);
@@ -161,6 +165,7 @@ public class EnderChestPlus extends JavaPlugin {
 
         if (loader != null) loader.saveAllInventoryData(false);
         if (database != null) database.close();
+        MigrationLog.close();
         mythicRepairer = null;
 
         Bukkit.getLogger().info(getName() + " disabled.");

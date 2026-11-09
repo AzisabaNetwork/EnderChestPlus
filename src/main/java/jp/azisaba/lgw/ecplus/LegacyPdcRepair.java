@@ -4,7 +4,6 @@ import io.papermc.paper.datacomponent.DataComponentTypes;
 import io.papermc.paper.datacomponent.item.BundleContents;
 import io.papermc.paper.datacomponent.item.ItemContainerContents;
 import jp.azisaba.lgw.ecplus.utils.nbt.Nbt;
-import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -180,7 +179,7 @@ final class LegacyPdcRepair {
             ItemStack repaired = ItemStack.deserializeBytes(Nbt.writeCompressed(root));
             return repaired == null || repaired.getType().isAir() ? null : repaired;
         } catch (Exception e) {
-            Bukkit.getLogger().warning("[EnderChestPlus] Could not repair legacy PDC of " + item.getType() + ": " + e.getMessage());
+            MigrationLog.warn("Could not repair legacy PDC of " + item.getType() + ": " + e.getMessage());
             return null;
         }
     }
