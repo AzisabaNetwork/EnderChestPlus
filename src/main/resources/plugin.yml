@@ -8,6 +8,7 @@ depend:
   - Vault
 softdepend:
   - MythicMobs
+  - CrackShot
 commands:
   enderchestplus:
     permission: enderchestplus.command.enderchestplus
