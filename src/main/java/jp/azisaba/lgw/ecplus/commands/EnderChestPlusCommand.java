@@ -134,6 +134,14 @@ public class EnderChestPlusCommand implements TabExecutor {
                         if (Bukkit.getPlayer(uuid) == null) loader.unload(uuid);
                     }).execute();
             return true;
+        } else if (args[0].equalsIgnoreCase("storagebox")) {
+            if (args.length <= 1) {
+                sender.sendMessage(Chat.f("&cUsage: /" + label + " storagebox <Player/UUID|all> [restore]"));
+                return true;
+            }
+            boolean apply = args.length > 2 && args[2].equalsIgnoreCase("restore");
+            restoreStorageBoxes(sender, label, args[1], apply);
+            return true;
         } else if (args[0].equalsIgnoreCase("open")) {
             if (!(sender instanceof Player p)) {
                 sender.sendMessage(Chat.f("&cこのコマンドはプレイヤーのみ実行できます。"));
@@ -338,7 +346,7 @@ public class EnderChestPlusCommand implements TabExecutor {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
         if (args.length == 1) {
-            return Stream.of("open", "save", "enable", "disable", "migrate", "remigrate", "openingPlayer", "mythic", "shulkers")
+            return Stream.of("open", "save", "enable", "disable", "migrate", "remigrate", "openingPlayer", "mythic", "shulkers", "storagebox")
                     .filter(sub -> sub.toLowerCase().startsWith(args[0].toLowerCase()))
                     .collect(Collectors.toList());
         }
@@ -352,7 +360,7 @@ public class EnderChestPlusCommand implements TabExecutor {
             if (args[0].equalsIgnoreCase("mythic")) {
                 return "reload".startsWith(args[1].toLowerCase()) ? List.of("reload") : Collections.emptyList();
             }
-            if (args[0].equalsIgnoreCase("remigrate")) {
+            if (args[0].equalsIgnoreCase("remigrate") || args[0].equalsIgnoreCase("storagebox")) {
                 List<String> options = new ArrayList<>();
                 options.add("all");
                 Bukkit.getOnlinePlayers().forEach(p -> options.add(p.getName()));
@@ -361,7 +369,7 @@ public class EnderChestPlusCommand implements TabExecutor {
                         .collect(Collectors.toList());
             }
         }
-        if (args.length == 3 && args[0].equalsIgnoreCase("shulkers")) {
+        if (args.length == 3 && (args[0].equalsIgnoreCase("shulkers") || args[0].equalsIgnoreCase("storagebox"))) {
             return "restore".startsWith(args[2].toLowerCase()) ? List.of("restore") : Collections.emptyList();
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("migrate")) {
@@ -373,6 +381,63 @@ public class EnderChestPlusCommand implements TabExecutor {
         return Collections.emptyList();
     }
 
+    /** Restores only the StorageBoxes from the legacy YAML (one player or all), without re-importing anything else. */
+    private void restoreStorageBoxes(CommandSender sender, String label, String target, boolean apply) {
+        sender.sendMessage(Chat.f(apply ? "&eStorageBoxを旧データから復元しています..." : "&eStorageBoxを旧データと照合しています（変更なし）..."));
+        EnderChestPlus.newChain().async(() -> {
+            try {
+                if (target.equalsIgnoreCase("all")) {
+                    List<UUID> owners = loader.legacyYamlOwners();
+                    sender.sendMessage(Chat.f("&7対象: {0}人", owners.size()));
+                    int players = 0, boxes = 0, skipped = 0;
+                    for (UUID uuid : owners) {
+                        List<String> report;
+                        try {
+                            report = loader.restoreStorageBoxes(uuid, apply);
+                        } catch (Exception e) {
+                            plugin.getLogger().warning("StorageBox restore failed for " + uuid + ": " + e.getMessage());
+                            skipped++;
+                            continue;
+                        }
+                        int count = InventoryData.restoredCount(report);
+                        if (report.size() == 1 && report.get(0).contains("スキップ")) skipped++;
+                        if (count > 0) {
+                            players++;
+                            boxes += count;
+                            sender.sendMessage(Chat.f("&7 - &f{0}: {1}", uuid, report.get(0)));
+                        }
+                    }
+                    sender.sendMessage(Chat.f(apply ? "&a{0}人のStorageBoxを合計{1}個復元しました。(スキップ {2}人)" : "&e{0}人に復元できるStorageBoxが合計{1}個あります。(スキップ {2}人)",
+                            players, boxes, skipped));
+                    sender.sendMessage(Chat.f("&7詳細は plugins/EnderChestPlus のマイグレーションログを確認してください。"));
+                    if (!apply && boxes > 0) {
+                        sender.sendMessage(Chat.f("&7実行するには &e/{0} storagebox all restore", label));
+                    }
+                    return;
+                }
+                UUID uuid;
+                try {
+                    uuid = UUIDUtils.getUUID(target);
+                } catch (Exception e) {
+                    sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。({0})", e.getClass().getSimpleName()));
+                    return;
+                }
+                if (uuid == null) {
+                    sender.sendMessage(Chat.f("&cUUIDの取得に失敗しました。(不明なプレイヤー)"));
+                    return;
+                }
+                List<String> report = loader.restoreStorageBoxes(uuid, apply);
+                report.forEach(line -> sender.sendMessage(Chat.f("&7 - &f{0}", line)));
+                if (!apply && InventoryData.restoredCount(report) > 0) {
+                    sender.sendMessage(Chat.f("&7実行するには &e/{0} storagebox {1} restore", label, target));
+                }
+            } catch (Exception e) {
+                sender.sendMessage(Chat.f("&cStorageBoxの復元中にエラーが発生しました: {0}", e.getMessage()));
+                plugin.getLogger().warning("StorageBox restore failed: " + e);
+            }
+        }).execute();
+    }
+
     private void sendUsage(CommandSender sender, String label) {
         sender.sendMessage(Chat.f("&e/{0} open <Player/UUID> &7- &aECを開きます", label) + "\n"
             + Chat.f("&e/{0} save &7- &a非同期で全プレイヤーのECをセーブします", label) + "\n"
@@ -382,6 +447,7 @@ public class EnderChestPlusCommand implements TabExecutor {
             + Chat.f("&e/{0} remigrate <Player/UUID|all> &7- &aレガシーYAMLからECデータを再インポートします", label) + "\n"
             + Chat.f("&e/{0} openingPlayer &7- &aエンダーチェストを開いているプレイヤーを取得します", label) + "\n"
             + Chat.f("&e/{0} shulkers <Player/UUID> [restore] &7- &a中身が失われたシュルカーを旧データと照合 / 復元します", label) + "\n"
+            + Chat.f("&e/{0} storagebox <Player/UUID|all> [restore] &7- &a壊れたStorageBoxだけを旧データと照合 / 復元します", label) + "\n"
             + Chat.f("&e/{0} mythic [reload] &7- &aMMアイテム修復の状況を表示 / 旧MM定義を読み直します", label) + "\n");
     }
 }

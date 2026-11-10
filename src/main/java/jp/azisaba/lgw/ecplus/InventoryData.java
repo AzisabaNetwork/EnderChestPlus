@@ -88,13 +88,16 @@ public class InventoryData {
                     deserialize(bytes);
                     int repaired = repairLegacyPdcOnce();
                     repaired += repairLegacyStorageBoxes();
+                    repaired += repairCrackShotWeapons();
                     if (repaired > 0) save(false);
                 } else if (loadLegacyYaml()) {
+                    repairCrackShotWeapons();
                     save(false);
                 } else {
                     throw new IOException("Unsupported legacy inventory data format");
                 }
             } else if (loadLegacyYaml()) {
+                repairCrackShotWeapons();
                 save(false);
             }
         } catch (SQLException | IOException | InvalidConfigurationException e) {
@@ -560,6 +563,87 @@ public class InventoryData {
             int page = entry.getKey() + 1;
             repaired += LegacyStorageBoxRepair.repairInventory(entry.getValue(), legacy, message ->
                     MigrationLog.info(uuid + " page " + page + ": " + message));
+        }
+        return repaired;
+    }
+
+    /**
+     * Restores only the StorageBoxes of this ender chest from the legacy YAML, without re-importing anything else:
+     * boxes that lost their NBT, boxes whose content item lost its NBT, and boxes whose ID appears more than once
+     * (those are overwritten with the legacy box when the content type matches). Each box keeps its amount.
+     * Boxes that no longer exist are never recreated. Changes the pages only when {@code apply} is true.
+     *
+     * @return the report lines; the first line is the summary
+     */
+    public java.util.List<String> restoreStorageBoxesFromLegacyYaml(boolean apply) throws IOException {
+        java.util.List<String> result = new java.util.ArrayList<>();
+        java.util.List<File> files = legacyYamlCandidates();
+        if (files.isEmpty()) {
+            result.add("レガシーYAMLがありません");
+            return result;
+        }
+        Map<String, Nbt.CompoundTag> legacy = new HashMap<>();
+        for (File file : files) {
+            legacy.putAll(LegacyStorageBoxRepair.indexLegacyBoxes(
+                    parseRawYaml(sanitizeLegacyYaml(Files.readString(file.toPath(), StandardCharsets.UTF_8)))));
+        }
+        if (legacy.isEmpty()) {
+            result.add("レガシーYAMLにStorageBoxがありません");
+            return result;
+        }
+
+        LegacyStorageBoxRepair.RestoreReport report = new LegacyStorageBoxRepair.RestoreReport();
+        java.util.Set<String> duplicates = LegacyStorageBoxRepair.duplicateIds(inventories.values());
+        for (Map.Entry<Integer, Inventory> entry : new java.util.TreeMap<>(inventories).entrySet()) {
+            LegacyStorageBoxRepair.restoreInventory(entry.getValue(), legacy, duplicates, apply,
+                    "ページ" + (entry.getKey() + 1), report);
+        }
+        java.util.List<String> missing = new java.util.ArrayList<>();
+        for (Map.Entry<String, Nbt.CompoundTag> box : legacy.entrySet()) {
+            if (!report.seen.contains(box.getKey())) {
+                missing.add("旧データのStorageBox " + box.getKey() + " (" + box.getValue().getString("storageBoxType")
+                        + ") は現在のエンダーチェストにありません");
+            }
+        }
+        java.util.Map<LegacyStorageBoxRepair.Reason, Integer> counts = report.restored;
+        result.add((apply ? "復元" : "復元できる") + ": NBT消失 " + counts.getOrDefault(LegacyStorageBoxRepair.Reason.LOST_NBT, 0)
+                + " / 中身のNBT消失 " + counts.getOrDefault(LegacyStorageBoxRepair.Reason.LOST_CONTENT, 0)
+                + " / 重複ID上書き " + counts.getOrDefault(LegacyStorageBoxRepair.Reason.DUPLICATE, 0)
+                + " / 正常 " + report.healthy + " / 重複IDだが種類違い " + report.duplicateMismatch
+                + " / 失敗 " + report.failed + " / 旧データのみ " + missing.size());
+        result.addAll(report.lines);
+        result.addAll(missing);
+        if (!report.lines.isEmpty() || !missing.isEmpty()) {
+            String mode = apply ? "Restored " : "Could restore (check only) ";
+            MigrationLog.info(mode + report.total() + " StorageBox(es) of " + uuid + " from the legacy YAML.");
+            report.lines.forEach(line -> MigrationLog.info(uuid + " " + line));
+            missing.forEach(line -> MigrationLog.info(uuid + " " + line));
+        }
+        return result;
+    }
+
+    /** The number of StorageBoxes restored (or restorable) in a report of {@link #restoreStorageBoxesFromLegacyYaml}. */
+    public static int restoredCount(java.util.List<String> report) {
+        int count = 0;
+        for (String line : report) if (line.contains(" を復元 [")) count++;
+        return count;
+    }
+
+    /**
+     * Tags 1.15.2 CrackShot weapons with {@code crackshot:weapon_id} (see {@link CrackShotRepair}).
+     *
+     * @return the number of tagged weapons
+     */
+    int repairCrackShotWeapons() {
+        int repaired = 0;
+        for (Map.Entry<Integer, Inventory> entry : inventories.entrySet()) {
+            int page = entry.getKey() + 1;
+            try {
+                repaired += CrackShotRepair.repairInventory(entry.getValue(), message ->
+                        MigrationLog.info(uuid + " page " + page + ": " + message));
+            } catch (RuntimeException e) {
+                MigrationLog.warn("Could not repair CrackShot weapons of " + uuid + " page " + page + ": " + e.getMessage());
+            }
         }
         return repaired;
     }

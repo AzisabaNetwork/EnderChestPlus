@@ -189,6 +189,192 @@ final class LegacyStorageBoxRepair {
         }
     }
 
+    // ------------------------------------------------------------------ manual restore (/ecp storagebox)
+
+    /** Why {@link #restore} replaces a box. */
+    enum Reason {
+        LOST_NBT("NBT消失"),
+        LOST_CONTENT("中身のNBT消失"),
+        DUPLICATE("重複ID上書き");
+
+        final String label;
+
+        Reason(String label) {
+            this.label = label;
+        }
+    }
+
+    /** Counters and report lines of one manual restore. */
+    static final class RestoreReport {
+        final java.util.Map<Reason, Integer> restored = new java.util.EnumMap<>(Reason.class);
+        final java.util.List<String> lines = new java.util.ArrayList<>();
+        final java.util.Set<String> seen = new java.util.HashSet<>();
+        int healthy;
+        int duplicateMismatch;
+        int failed;
+
+        int total() {
+            return restored.values().stream().mapToInt(Integer::intValue).sum();
+        }
+    }
+
+    /** randomUUIDs ("ID:" lore) that appear more than once in the inventories, inside shulker boxes included. */
+    static java.util.Set<String> duplicateIds(Iterable<Inventory> inventories) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (Inventory inventory : inventories) countIds(inventory.getContents(), counts);
+        java.util.Set<String> duplicates = new java.util.HashSet<>();
+        counts.forEach((id, count) -> {
+            if (count > 1) duplicates.add(id);
+        });
+        return duplicates;
+    }
+
+    private static void countIds(ItemStack[] items, Map<String, Integer> counts) {
+        for (ItemStack item : items) {
+            String id = loreId(item);
+            if (id != null) {
+                counts.merge(id, 1, Integer::sum);
+            } else if (item != null && item.getItemMeta() instanceof BlockStateMeta meta && meta.hasBlockState()
+                    && meta.getBlockState() instanceof Container container) {
+                countIds(container.getInventory().getContents(), counts);
+            }
+        }
+    }
+
+    /**
+     * Restores the boxes of the inventory from the legacy YAML: boxes that lost their NBT, boxes whose content
+     * item lost its NBT (recovered from the lore as a plain item), and boxes whose ID is in {@code duplicates}.
+     * The amount and auto collect/buy settings of each box are kept. Changes the inventory only when applying.
+     *
+     * @return the number of boxes restored (or that would be restored)
+     */
+    static int restoreInventory(Inventory inventory, Map<String, Nbt.CompoundTag> legacy, java.util.Set<String> duplicates,
+                                boolean apply, String where, RestoreReport report) {
+        int restored = 0;
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null || item.getType().isAir()) continue;
+            String location = where + " スロット" + slot;
+            if (loreId(item) != null) {
+                ItemStack fixed = restore(item, legacy, duplicates, location, report);
+                if (fixed != null) {
+                    restored++;
+                    if (apply) inventory.setItem(slot, fixed);
+                }
+                continue;
+            }
+            if (item.getItemMeta() instanceof BlockStateMeta meta && meta.hasBlockState()
+                    && meta.getBlockState() instanceof Container container) {
+                int nested = restoreInventory(container.getInventory(), legacy, duplicates, apply,
+                        location + " " + item.getType() + "内", report);
+                if (nested > 0 && apply) {
+                    meta.setBlockState(container);
+                    item.setItemMeta(meta);
+                    inventory.setItem(slot, item);
+                }
+                restored += nested;
+            }
+        }
+        return restored;
+    }
+
+    /** The restored copy of one box, or null when it needs nothing or cannot be restored. */
+    static ItemStack restore(ItemStack item, Map<String, Nbt.CompoundTag> legacy, java.util.Set<String> duplicates,
+                             String where, RestoreReport report) {
+        String id = loreId(item);
+        if (id == null) return null;
+        report.seen.add(id);
+        Nbt.CompoundTag legacyTag = legacy.get(id);
+        if (legacyTag == null) return null;
+        String legacyType = modernMaterialName(legacyTag.getString("storageBoxType"));
+        if (legacyType == null || legacyType.isEmpty() || legacyType.equals("NULL")) return null;
+
+        try {
+            Nbt.CompoundTag root = Nbt.readCompressed(item.serializeAsBytes());
+            Nbt.CompoundTag components = root.getCompound("components");
+            if (components == null) {
+                components = new Nbt.CompoundTag();
+                root.put("components", components);
+            }
+            Nbt.CompoundTag customData = components.getCompound("minecraft:custom_data");
+            if (customData == null) {
+                customData = new Nbt.CompoundTag();
+                components.put("minecraft:custom_data", customData);
+            }
+            Nbt.CompoundTag pdc = customData.getCompound(PDC);
+            String pdcType = pdc == null ? null : pdc.getString(PDC_TYPE);
+            String current = pdcType != null ? pdcType : customData.getString("storageBoxType");
+            Nbt.CompoundTag content = customData.getCompound("storageBoxTag");
+            Nbt.CompoundTag legacyContent = legacyTag.getCompound("storageBoxTag");
+            boolean hasContent = content != null && !content.getTags().isEmpty();
+            boolean legacyHasContent = legacyContent != null && !legacyContent.getTags().isEmpty();
+            boolean sameType = current != null && modernMaterialName(current).equals(legacyType);
+            String component = pdc == null ? null : pdc.getString(PDC_COMPONENT);
+
+            Reason reason;
+            if (needsRepair(current, legacyType)) {
+                reason = Reason.LOST_NBT;
+            } else if (!hasContent && legacyHasContent && sameType && !isCustomizedContent(component)) {
+                reason = Reason.LOST_CONTENT;
+            } else if (duplicates.contains(id) && sameType) {
+                reason = Reason.DUPLICATE;
+            } else {
+                if (duplicates.contains(id)) {
+                    report.duplicateMismatch++;
+                    report.lines.add(where + ": 重複ID " + id + " ですが種類が旧データ (" + legacyType + ") と違う ("
+                            + current + ") ため上書きしません");
+                } else {
+                    report.healthy++;
+                }
+                return null;
+            }
+
+            customData.putString("storageBoxType", legacyType);
+            if (legacyHasContent) {
+                customData.put("storageBoxTag", legacyContent.copy());
+            } else {
+                customData.remove("storageBoxTag");
+            }
+            for (String key : COPIED_TAGS) {
+                Nbt.Tag value = legacyTag.get(key);
+                if (value != null && customData.get(key) == null) customData.put(key, value.copy());
+            }
+            if (pdc != null) {
+                // StorageBox reads its PDC first; the cached content would still be the old item
+                pdc.putString(PDC_TYPE, legacyType);
+                pdc.remove(PDC_COMPONENT);
+            }
+            ItemStack restored = ItemStack.deserializeBytes(Nbt.writeCompressed(root));
+            if (restored == null || restored.getType().isAir()) {
+                report.failed++;
+                report.lines.add(where + ": " + id + " の復元アイテムを作れませんでした");
+                return null;
+            }
+            report.restored.merge(reason, 1, Integer::sum);
+            report.lines.add(where + ": " + id + " を復元 [" + reason.label + "] " + (current == null ? "(なし)" : current)
+                    + " -> " + legacyType + " (旧データの数: " + legacyTag.getNumber("storageBoxAmount") + ")");
+            return restored;
+        } catch (Exception e) {
+            report.failed++;
+            report.lines.add(where + ": " + id + " の復元に失敗しました: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** True when the box's current content item has its own name or lore (the player set it again since). */
+    private static boolean isCustomizedContent(String serialized) {
+        if (serialized == null || serialized.isBlank()) return false;
+        try {
+            org.bukkit.configuration.file.YamlConfiguration yaml = new org.bukkit.configuration.file.YamlConfiguration();
+            yaml.loadFromString(serialized);
+            ItemStack content = yaml.getItemStack("item");
+            ItemMeta meta = content == null ? null : content.getItemMeta();
+            return meta != null && (meta.hasDisplayName() || meta.hasLore());
+        } catch (Exception e) {
+            return true; // unknown: do not replace it
+        }
+    }
+
     private static boolean needsRepair(String current, String legacyType) {
         if (current == null || current.isBlank()) return true;
         String upper = current.trim().toUpperCase(Locale.ROOT);

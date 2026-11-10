@@ -292,6 +292,52 @@ public class InventoryLoader {
         }
     }
 
+    /**
+     * Restores only the StorageBoxes of one player's ender chest from the legacy YAML (see
+     * {@link InventoryData#restoreStorageBoxesFromLegacyYaml}). Call from an async thread: the boxes are replaced
+     * on the main thread and the result is saved before returning.
+     *
+     * @return the report lines; the first line is the summary
+     */
+    public List<String> restoreStorageBoxes(UUID uuid, boolean apply) throws Exception {
+        if (apply && isInventoryOpen(uuid)) return List.of("エンダーチェストが開かれているためスキップしました");
+        InventoryData data = invs.get(uuid);
+        if (data == null) {
+            if (database.load(uuid) == null) return List.of("エンダーチェストのデータがありません");
+            data = loadInventoryData(uuid, false);
+        }
+        InventoryData target = data;
+        List<String> report = Bukkit.getScheduler().callSyncMethod(plugin, () -> {
+            if (apply && isInventoryOpen(uuid)) return List.of("エンダーチェストが開かれたためスキップしました");
+            return target.restoreStorageBoxesFromLegacyYaml(apply);
+        }).get(60, java.util.concurrent.TimeUnit.SECONDS);
+        if (apply && InventoryData.restoredCount(report) > 0 && !target.save(false)) {
+            List<String> failed = new ArrayList<>(report);
+            failed.add(0, "保存に失敗しました");
+            report = failed;
+        }
+        if (Bukkit.getPlayer(uuid) == null && !isInventoryOpen(uuid)) invs.remove(uuid, target);
+        return report;
+    }
+
+    /** UUIDs of the legacy YAML files that have a row in the database (targets of a bulk StorageBox restore). */
+    public List<UUID> legacyYamlOwners() throws java.sql.SQLException {
+        File[] files = EnderChestPlus.getInventoryDataFile().listFiles((directory, name) -> name.endsWith(".yml"));
+        List<UUID> owners = new ArrayList<>();
+        if (files == null) return owners;
+        for (File file : files) {
+            String filename = file.getName();
+            UUID uuid;
+            try {
+                uuid = UUID.fromString(filename.substring(0, filename.length() - ".yml".length()));
+            } catch (IllegalArgumentException e) {
+                continue;
+            }
+            if (invs.containsKey(uuid) || database.load(uuid) != null) owners.add(uuid);
+        }
+        return owners;
+    }
+
     public InventoryData getInventoryData(Player p) {
         return getInventoryData(p.getUniqueId());
     }
