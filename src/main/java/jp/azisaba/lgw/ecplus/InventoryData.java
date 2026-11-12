@@ -1,6 +1,7 @@
 package jp.azisaba.lgw.ecplus;
 
 import jp.azisaba.lgw.ecplus.utils.Chat;
+import jp.azisaba.lgw.ecplus.utils.ItemNormalizer;
 import jp.azisaba.lgw.ecplus.utils.nbt.Nbt;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -31,6 +32,8 @@ public class InventoryData {
     private static final int TRAILER_MAGIC = 0x45435046; // ECPF
     /** The PDC of items imported from legacy YAML has been repaired (see {@link LegacyPdcRepair}). */
     private static final int FLAG_LEGACY_PDC_REPAIRED = 1;
+    /** The dye of leather armor imported from legacy YAML has been restored (see {@link #restoreLegacyColor}). */
+    private static final int FLAG_LEGACY_COLOR_REPAIRED = 2;
     /** Concurrent: pages are rebuilt on async threads (remigrate) while the main thread may read them. */
     private final Map<Integer, Inventory> inventories = new java.util.concurrent.ConcurrentHashMap<>();
     private int flags = 0;
@@ -82,12 +85,14 @@ public class InventoryData {
     private void load() {
         try {
             byte[] bytes = database.load(uuid);
-            if (bytes == null) flags |= FLAG_LEGACY_PDC_REPAIRED; // nothing imported before the repair existed
+            // nothing imported before the repairs existed
+            if (bytes == null) flags |= FLAG_LEGACY_PDC_REPAIRED | FLAG_LEGACY_COLOR_REPAIRED;
             if (bytes != null) {
                 if (isCurrentFormat(bytes)) {
                     deserialize(bytes);
                     int repaired = repairLegacyPdcOnce();
                     repaired += repairLegacyStorageBoxes();
+                    repaired += repairLegacyColorsOnce();
                     repaired += repairCrackShotWeapons();
                     if (repaired > 0) save(false);
                 } else if (loadLegacyYaml()) {
@@ -146,9 +151,101 @@ public class InventoryData {
         return repaired + 1;
     }
 
+    /**
+     * Bukkit 1.21.11 drops the dye of leather armor read from 1.15.2 YAML ({@code meta-type: LEATHER_ARMOR} is no
+     * longer the meta of leather armor), so every dyed armor came out undyed. The color is taken from the raw YAML.
+     *
+     * @return true if the item was changed
+     */
+    static boolean restoreLegacyColor(ItemStack item, Map<?, ?> raw, String path) {
+        if (item == null || !(rawValue(raw, path + ".meta.color") instanceof Map<?, ?> color)) return false;
+        if (!(item.getItemMeta() instanceof org.bukkit.inventory.meta.LeatherArmorMeta meta)) return false;
+        if (!(color.get("RED") instanceof Number r) || !(color.get("GREEN") instanceof Number g)
+                || !(color.get("BLUE") instanceof Number b)) return false;
+        try {
+            org.bukkit.Color legacy = org.bukkit.Color.fromRGB(r.intValue(), g.intValue(), b.intValue());
+            if (legacy.equals(meta.getColor())) return false;
+            if (!meta.getColor().equals(Bukkit.getItemFactory().getDefaultLeatherColor())) return false; // dyed since
+            meta.setColor(legacy);
+            item.setItemMeta(meta);
+            return true;
+        } catch (RuntimeException e) {
+            MigrationLog.warn("Could not restore the dye color at " + path + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Restores what was lost by items imported before {@link #restoreLegacyColor} and {@link #readLegacyShield}
+     * existed: the dye of leather armor, and shields (which came out as plain shields without any data).
+     * Only an item that is still in its legacy slot is touched: leather armor with the same material and name that
+     * is still undyed, and shields that still have no data at all. Runs once per player.
+     *
+     * @return the number of repaired items (the flag change alone also counts, so it gets saved)
+     */
+    private int repairLegacyColorsOnce() {
+        if ((flags & FLAG_LEGACY_COLOR_REPAIRED) != 0) return 0;
+        flags |= FLAG_LEGACY_COLOR_REPAIRED;
+        int repaired = 0;
+        for (File file : legacyYamlCandidates()) {
+            Map<?, ?> raw;
+            YamlConfiguration config = new YamlConfiguration();
+            try {
+                String yaml = sanitizeLegacyYaml(Files.readString(file.toPath(), StandardCharsets.UTF_8));
+                raw = parseRawYaml(yaml);
+                config.loadFromString(yaml);
+            } catch (IOException | InvalidConfigurationException | RuntimeException e) {
+                MigrationLog.warn("Could not read " + file.getName() + ": " + e.getMessage());
+                continue;
+            }
+            for (Map.Entry<?, ?> pageEntry : raw.entrySet()) {
+                int page = positiveInt(String.valueOf(pageEntry.getKey()));
+                Inventory inventory = page < 0 ? null : inventories.get(page);
+                if (inventory == null || !(pageEntry.getValue() instanceof Map<?, ?> slots)) continue;
+                for (Map.Entry<?, ?> slotEntry : slots.entrySet()) {
+                    int slot = positiveInt(String.valueOf(slotEntry.getKey()));
+                    if (slot < 0 || slot >= inventory.getSize()) continue;
+                    String path = pageEntry.getKey() + "." + slotEntry.getKey();
+                    ItemStack item = inventory.getItem(slot);
+                    if (item == null || !item.getType().name().equalsIgnoreCase(rawString(raw, path + ".type"))) continue;
+                    if (item.getType() == Material.SHIELD && !item.hasItemMeta() && isLegacyShield(raw, path)) {
+                        try {
+                            ItemStack shield = readLegacyItem(config, raw, path);
+                            if (shield != null && shield.getType() == Material.SHIELD && shield.hasItemMeta()) {
+                                shield = finishLegacyItem(shield, raw, path);
+                                shield.setAmount(item.getAmount());
+                                inventory.setItem(slot, shield);
+                                repaired++;
+                            }
+                        } catch (RuntimeException e) {
+                            MigrationLog.warn("Could not restore the shield at " + path + " for " + uuid + ": " + e.getMessage());
+                        }
+                        continue;
+                    }
+                    if (!sameLegacyName(item, rawString(raw, path + ".meta.display-name"))) continue;
+                    if (restoreLegacyColor(item, raw, path)) {
+                        inventory.setItem(slot, item);
+                        repaired++;
+                    }
+                }
+            }
+        }
+        if (repaired > 0) {
+            MigrationLog.info("Restored " + repaired + " dyed leather armor item(s) / shield(s) for " + uuid + ".");
+        }
+        return repaired + 1;
+    }
+
+    private static boolean sameLegacyName(ItemStack item, String legacyName) {
+        org.bukkit.inventory.meta.ItemMeta meta = item.getItemMeta();
+        String current = meta != null && meta.hasDisplayName() ? meta.getDisplayName() : null;
+        if (current == null || legacyName == null) return current == null && legacyName == null;
+        return org.bukkit.ChatColor.stripColor(current).trim().equals(org.bukkit.ChatColor.stripColor(legacyName).trim());
+    }
+
     public boolean loadLegacyYaml(File file) throws IOException, InvalidConfigurationException {
         if (!file.isFile()) return false;
-        flags |= FLAG_LEGACY_PDC_REPAIRED; // repaired item by item below
+        flags |= FLAG_LEGACY_PDC_REPAIRED | FLAG_LEGACY_COLOR_REPAIRED; // repaired item by item below
         String yaml = Files.readString(file.toPath(), StandardCharsets.UTF_8);
         yaml = sanitizeLegacyYaml(yaml);
         YamlConfiguration config = new YamlConfiguration();
@@ -180,15 +277,86 @@ public class InventoryData {
                     }
                 }
                 if (slot >= 0 && slot < inventory.getSize() && item != null && item.getType() != Material.AIR) {
-                    fixLegacyContainerItem(item, raw, pageKey + "." + slotKey);
-                    ItemStack pdcFixed = LegacyPdcRepair.repair(item);
-                    if (pdcFixed != null) item = pdcFixed;
-                    inventory.setItem(slot, item);
+                    inventory.setItem(slot, finishLegacyItem(item, raw, pageKey + "." + slotKey));
                 }
             }
             inventories.put(page, inventory);
         }
         return true;
+    }
+
+    /** The repairs every item read from legacy YAML goes through, ending with the normalized form. */
+    private static ItemStack finishLegacyItem(ItemStack item, Map<?, ?> raw, String path) {
+        fixLegacyContainerItem(item, raw, path);
+        ItemStack pdcFixed = LegacyPdcRepair.repair(item);
+        if (pdcFixed != null) item = pdcFixed;
+        restoreLegacyColor(item, raw, path);
+        // the same item must get the same data here, in AziSync, StorageBox, ItemStash and the shops
+        return ItemNormalizer.normalize(item);
+    }
+
+    private static boolean isLegacyShield(Map<?, ?> raw, String path) {
+        return "SHIELD".equals(rawString(raw, path + ".type"))
+                && "TILE_ENTITY".equals(rawString(raw, path + ".meta.meta-type"));
+    }
+
+    /**
+     * Reads a shield saved by 1.15.2.
+     * <p>
+     * 1.15.2 wrote shields with {@code meta-type: TILE_ENTITY} and kept the banner (base color and patterns) in the
+     * {@code BlockEntityTag} of "internal". Bukkit 1.21.11 turns such a meta into a plain shield: not only the colors
+     * but the name, lore, enchantments, attributes... are all gone. The meta is therefore read as the current
+     * {@code SHIELD} meta, and the colors are taken from the item as Minecraft's DataFixer converts it.
+     *
+     * @return the shield, or null when the item is not a 1.15.2 shield or could not be rebuilt
+     */
+    static ItemStack readLegacyShield(Map<?, ?> raw, String path) {
+        if (!isLegacyShield(raw, path)) return null;
+        if (!(rawValue(raw, path) instanceof Map<?, ?> rawItem) || !(rawItem.get("meta") instanceof Map<?, ?> rawMeta)) return null;
+        try {
+            Map<String, Object> meta = new java.util.LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : rawMeta.entrySet()) meta.put(String.valueOf(entry.getKey()), entry.getValue());
+            meta.put("meta-type", "SHIELD");
+            meta.remove("blockMaterial");
+            if (meta.get("internal") != null) {
+                Nbt.CompoundTag tag = Nbt.readCompressed(Base64.getDecoder().decode(String.valueOf(meta.get("internal")).replaceAll("\\s", "")));
+                tag.remove("BlockEntityTag");
+                if (tag.getTags().isEmpty()) meta.remove("internal");
+                else meta.put("internal", Base64.getEncoder().encodeToString(Nbt.writeCompressed(tag)));
+            }
+            Map<String, Object> item = new java.util.LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : rawItem.entrySet()) item.put(String.valueOf(entry.getKey()), entry.getValue());
+            item.put("meta", meta);
+            if (!(deserializeRaw(item) instanceof ItemStack shield) || shield.getType() != Material.SHIELD) return null;
+
+            ItemStack converted = readLegacyItemViaDataFixer(raw, path);
+            if (converted != null && converted.getItemMeta() instanceof org.bukkit.inventory.meta.ShieldMeta from
+                    && shield.getItemMeta() instanceof org.bukkit.inventory.meta.ShieldMeta to) {
+                to.setBaseColor(from.getBaseColor());
+                to.setPatterns(from.getPatterns());
+                shield.setItemMeta(to);
+            }
+            return shield;
+        } catch (Throwable t) {
+            MigrationLog.warn("Could not rebuild the legacy shield at " + path + ": " + t.getMessage());
+            return null;
+        }
+    }
+
+    /** Builds the objects of a raw YAML tree ("==" maps) the way YamlConfiguration does, innermost first. */
+    private static Object deserializeRaw(Object node) {
+        if (node instanceof Map<?, ?> map) {
+            Map<String, Object> copy = new java.util.LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) copy.put(String.valueOf(entry.getKey()), deserializeRaw(entry.getValue()));
+            return copy.containsKey("==")
+                    ? org.bukkit.configuration.serialization.ConfigurationSerialization.deserializeObject(copy) : copy;
+        }
+        if (node instanceof java.util.List<?> list) {
+            java.util.List<Object> copy = new java.util.ArrayList<>();
+            for (Object element : list) copy.add(deserializeRaw(element));
+            return copy;
+        }
+        return node;
     }
 
     public static String sanitizeLegacyYaml(String yaml) {
@@ -325,6 +493,8 @@ public class InventoryData {
      */
     private static ItemStack readLegacyItem(YamlConfiguration config, Map<?, ?> raw, String path) {
         ItemStack item = config.getItemStack(path);
+        ItemStack shield = readLegacyShield(raw, path); // Bukkit reads a 1.15.2 shield as a plain shield
+        if (shield != null) item = shield;
         if (item == null || item.getType() == Material.AIR) return item;
 
         String internalBase64 = rawString(raw, path + ".meta.internal");
@@ -415,12 +585,25 @@ public class InventoryData {
             if (!tag.getTags().isEmpty()) item.put("tag", tag);
             item.putInt("DataVersion", version instanceof Number n && n.intValue() > 0 ? n.intValue() : 2230); // 1.15.2
             ItemStack restored = ItemStack.deserializeBytes(Nbt.writeCompressed(item));
-            return restored == null || restored.getType() == Material.AIR ? null : restored;
+            if (restored == null || restored.getType() == Material.AIR) return null;
+            // the item flags are not part of "internal" either; the normalizer stores them the way Bukkit does
+            int hideFlags = 0;
+            if (rawValue(raw, path + ".meta.ItemFlags") instanceof java.util.List<?> itemFlags) {
+                for (Object flag : itemFlags) {
+                    int bit = LEGACY_ITEM_FLAGS.indexOf(String.valueOf(flag));
+                    if (bit >= 0) hideFlags |= 1 << bit;
+                }
+            }
+            return ItemNormalizer.normalize(restored, hideFlags);
         } catch (Throwable t) {
             MigrationLog.warn("Could not rebuild legacy item at " + path + " from raw NBT: " + t.getMessage());
             return null;
         }
     }
+
+    /** The 1.15.2 item flags in the order of their {@code HideFlags} bits. */
+    private static final java.util.List<String> LEGACY_ITEM_FLAGS = java.util.List.of("HIDE_ENCHANTS", "HIDE_ATTRIBUTES",
+            "HIDE_UNBREAKABLE", "HIDE_DESTROYS", "HIDE_PLACED_ON", "HIDE_POTION_EFFECTS", "HIDE_DYE");
 
     /** 1.15.2 stores display names as JSON text; older YAML may hold legacy "§" text instead. */
     private static String jsonText(String value) {
@@ -822,7 +1005,8 @@ public class InventoryData {
                 Inventory inventory = createInventory(page);
                 for (int slot = 0; slot < size; slot++) {
                     int itemLength = input.readInt();
-                    ItemStack item = itemLength == 0 ? null : ItemStack.deserializeBytes(input.readNBytes(itemLength));
+                    ItemStack item = itemLength == 0 ? null
+                            : ItemNormalizer.normalize(ItemStack.deserializeBytes(input.readNBytes(itemLength)));
                     if (slot < inventory.getSize()) inventory.setItem(slot, item);
                 }
                 inventories.put(page, inventory);
@@ -852,7 +1036,7 @@ public class InventoryData {
                 output.writeInt(entry.getKey());
                 output.writeInt(entry.getValue().getSize());
                 for (ItemStack item : entry.getValue().getContents()) {
-                    byte[] itemBytes = item == null ? new byte[0] : item.serializeAsBytes();
+                    byte[] itemBytes = item == null ? new byte[0] : ItemNormalizer.normalize(item).serializeAsBytes();
                     output.writeInt(itemBytes.length);
                     output.write(itemBytes);
                 }
