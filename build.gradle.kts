@@ -55,6 +55,8 @@ tasks {
     }
     processResources {
         val props = mapOf("version" to version, "description" to project.description)
+        // without these the task counts as up to date after a version bump and plugin.yml keeps the old version
+        inputs.properties(props.mapValues { it.value?.toString() ?: "" })
         filesMatching("plugin.yml") {
             expand(props)
         }
