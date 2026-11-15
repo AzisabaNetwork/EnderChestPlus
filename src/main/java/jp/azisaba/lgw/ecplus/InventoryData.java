@@ -1026,13 +1026,7 @@ public class InventoryData {
             if (input.available() >= Integer.BYTES * 2 && input.readInt() == TRAILER_MAGIC) {
                 flags = input.readInt();
             }
-            if (input.available() >= Integer.BYTES * 2 && input.readInt() == NAMES_MAGIC) {
-                int nameCount = input.readInt();
-                for (int i = 0; i < nameCount; i++) {
-                    int page = input.readInt();
-                    pageNames.put(page, input.readUTF());
-                }
-            }
+            readNamesTrailer(input, pageNames);
         }
         for (Map.Entry<Integer, java.util.List<ItemStack>> entry : pages.entrySet()) {
             Inventory inventory = createInventory(entry.getKey());
@@ -1041,6 +1035,27 @@ public class InventoryData {
                 inventory.setItem(slot, contents.get(slot));
             }
             inventories.put(entry.getKey(), inventory);
+        }
+    }
+
+    /** Writes the optional per-page names trailer ({@link #NAMES_MAGIC}). */
+    static void writeNamesTrailer(DataOutputStream output, Map<Integer, String> pageNames) throws IOException {
+        output.writeInt(NAMES_MAGIC);
+        output.writeInt(pageNames.size());
+        for (Map.Entry<Integer, String> entry : pageNames.entrySet()) {
+            output.writeInt(entry.getKey());
+            output.writeUTF(entry.getValue());
+        }
+    }
+
+    /** Reads the names trailer written by {@link #writeNamesTrailer}; no-op when it is absent. */
+    static void readNamesTrailer(DataInputStream input, Map<Integer, String> pageNames) throws IOException {
+        if (input.available() < Integer.BYTES * 2) return;
+        if (input.readInt() != NAMES_MAGIC) return;
+        int nameCount = input.readInt();
+        for (int i = 0; i < nameCount; i++) {
+            int page = input.readInt();
+            pageNames.put(page, input.readUTF());
         }
     }
 
@@ -1070,12 +1085,7 @@ public class InventoryData {
             }
             output.writeInt(TRAILER_MAGIC);
             output.writeInt(flags);
-            output.writeInt(NAMES_MAGIC);
-            output.writeInt(pageNames.size());
-            for (Map.Entry<Integer, String> entry : pageNames.entrySet()) {
-                output.writeInt(entry.getKey());
-                output.writeUTF(entry.getValue());
-            }
+            writeNamesTrailer(output, pageNames);
         }
         return bytes.toByteArray();
     }
