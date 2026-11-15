@@ -17,8 +17,8 @@ commands:
     usage: /{LABEL}
     permission: enderchestplus.command.receivedropped
   ec2:
-    description: Opens the ender chest
-    usage: /ec2
+    description: Opens the ender chest or renames a page
+    usage: /ec2 [rename <page> [name]]
 permissions:
   enderchestplus.command.enderchestplus:
     default: op

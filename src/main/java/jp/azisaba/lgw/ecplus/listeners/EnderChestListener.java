@@ -93,17 +93,23 @@ public class EnderChestListener implements Listener {
             }
 
             UUID looking = loader.getLookingAt(p);
-            InventoryData data;
-            if (looking != null) {
-                data = loader.getInventoryData(looking);
-            } else {
-                data = loader.getInventoryData(p);
-            }
+            UUID targetUuid = looking != null ? looking : p.getUniqueId();
+            InventoryData data = loader.getInventoryData(targetUuid);
             if (data == null) {
                 p.closeInventory();
                 p.sendMessage(Chat.f("&cデータが見つかりませんでした。再度お試しください。"));
                 return;
             }
+
+            if (e.getClick() == ClickType.RIGHT) {
+                if (e.getCursor() != null && e.getCursor().getType() != Material.AIR) {
+                    p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1, 1);
+                    return;
+                }
+                loader.openRenameAnvil(p, targetUuid, invNum - 1);
+                return;
+            }
+
             p.openInventory(data.getInventory(invNum - 1));
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1, 1);
         }
@@ -136,7 +142,7 @@ public class EnderChestListener implements Listener {
         }
 
         String title = invname;
-        int currentInventory = Integer.parseInt(title.substring(title.indexOf("Page") + 5)) - 1;
+        int currentInventory = Integer.parseInt(title.substring(title.lastIndexOf("Page") + 5)) - 1;
         int mainInventoryIndex = currentInventory / 54;
 
         if (clickedInv == null) {
@@ -243,7 +249,7 @@ public class EnderChestListener implements Listener {
         }
 
         String title = Chat.r(invname);
-        int currentInventory = Integer.parseInt(title.substring(title.indexOf("Page") + 5, title.length())) - 1;
+        int currentInventory = Integer.parseInt(title.substring(title.lastIndexOf("Page") + 5, title.length())) - 1;
         int addNum = 1;
         if (e.getClick() == ClickType.LEFT) {
             addNum = -1;

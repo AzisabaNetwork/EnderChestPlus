@@ -30,12 +30,19 @@ public class InventoryData {
     private static final int SERIALIZATION_MAGIC = 0x45435032; // ECP2
     /** Optional trailer after the pages (older versions stop reading before it, so it stays compatible). */
     private static final int TRAILER_MAGIC = 0x45435046; // ECPF
+    /** Optional second trailer holding per-page names (ignored by older versions). */
+    private static final int NAMES_MAGIC = 0x4543504E; // ECPN
+    public static final int MAX_PAGE_NAME_LENGTH = 24;
+    private static final java.util.regex.Pattern COLOR_CODE =
+            java.util.regex.Pattern.compile("[&\u00A7][0-9A-FK-ORa-fk-or]");
     /** The PDC of items imported from legacy YAML has been repaired (see {@link LegacyPdcRepair}). */
     private static final int FLAG_LEGACY_PDC_REPAIRED = 1;
     /** The dye of leather armor imported from legacy YAML has been restored (see {@link #restoreLegacyColor}). */
     private static final int FLAG_LEGACY_COLOR_REPAIRED = 2;
     /** Concurrent: pages are rebuilt on async threads (remigrate) while the main thread may read them. */
     private final Map<Integer, Inventory> inventories = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Per-page display names, keyed by the same 0-based page index as {@link #inventories}. */
+    private final Map<Integer, String> pageNames = new java.util.concurrent.ConcurrentHashMap<>();
     private int flags = 0;
     private final UUID uuid;
     private final DatabaseManager database;
@@ -123,6 +130,7 @@ public class InventoryData {
         File file = new File(EnderChestPlus.getInventoryDataFile(), sourceUuid + ".yml");
         if (!file.isFile()) return false;
         inventories.clear();
+        pageNames.clear();
         if (loadLegacyYaml(file)) {
             for (int i = 0; i < 18; i++) inventories.computeIfAbsent(i, this::createInventory);
             return save(false);
@@ -245,6 +253,7 @@ public class InventoryData {
 
     public boolean loadLegacyYaml(File file) throws IOException, InvalidConfigurationException {
         if (!file.isFile()) return false;
+        pageNames.clear();
         flags |= FLAG_LEGACY_PDC_REPAIRED | FLAG_LEGACY_COLOR_REPAIRED; // repaired item by item below
         String yaml = Files.readString(file.toPath(), StandardCharsets.UTF_8);
         yaml = sanitizeLegacyYaml(yaml);
@@ -996,24 +1005,42 @@ public class InventoryData {
     }
 
     private void deserialize(byte[] bytes) throws IOException {
+        // Page titles depend on their names, which are stored after the pages. Read the raw pages first,
+        // then create the inventories once the names are known.
+        Map<Integer, java.util.List<ItemStack>> pages = new java.util.LinkedHashMap<>();
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes))) {
             if (input.readInt() != SERIALIZATION_MAGIC) throw new IOException("Unsupported inventory data format");
-            int pages = input.readInt();
-            for (int p = 0; p < pages; p++) {
+            int pageCount = input.readInt();
+            for (int p = 0; p < pageCount; p++) {
                 int page = input.readInt();
                 int size = input.readInt();
-                Inventory inventory = createInventory(page);
+                java.util.List<ItemStack> contents = new java.util.ArrayList<>(size);
                 for (int slot = 0; slot < size; slot++) {
                     int itemLength = input.readInt();
                     ItemStack item = itemLength == 0 ? null
                             : ItemNormalizer.normalize(ItemStack.deserializeBytes(input.readNBytes(itemLength)));
-                    if (slot < inventory.getSize()) inventory.setItem(slot, item);
+                    contents.add(item);
                 }
-                inventories.put(page, inventory);
+                pages.put(page, contents);
             }
             if (input.available() >= Integer.BYTES * 2 && input.readInt() == TRAILER_MAGIC) {
                 flags = input.readInt();
             }
+            if (input.available() >= Integer.BYTES * 2 && input.readInt() == NAMES_MAGIC) {
+                int nameCount = input.readInt();
+                for (int i = 0; i < nameCount; i++) {
+                    int page = input.readInt();
+                    pageNames.put(page, input.readUTF());
+                }
+            }
+        }
+        for (Map.Entry<Integer, java.util.List<ItemStack>> entry : pages.entrySet()) {
+            Inventory inventory = createInventory(entry.getKey());
+            java.util.List<ItemStack> contents = entry.getValue();
+            for (int slot = 0; slot < contents.size() && slot < inventory.getSize(); slot++) {
+                inventory.setItem(slot, contents.get(slot));
+            }
+            inventories.put(entry.getKey(), inventory);
         }
     }
 
@@ -1043,11 +1070,38 @@ public class InventoryData {
             }
             output.writeInt(TRAILER_MAGIC);
             output.writeInt(flags);
+            output.writeInt(NAMES_MAGIC);
+            output.writeInt(pageNames.size());
+            for (Map.Entry<Integer, String> entry : pageNames.entrySet()) {
+                output.writeInt(entry.getKey());
+                output.writeUTF(entry.getValue());
+            }
         }
         return bytes.toByteArray();
     }
 
     public Inventory getInventory(int num) { return inventories.get(num); }
+
+    public String getPageName(int page) { return pageNames.get(page); }
+
+    public void setPageName(int page, String name) {
+        String sanitized = sanitizePageName(name);
+        if (sanitized == null) pageNames.remove(page);
+        else pageNames.put(page, sanitized);
+    }
+
+    /** Strips colors/line breaks, trims and caps the page name; empty input yields null (no name). */
+    public static String sanitizePageName(String name) {
+        if (name == null) return null;
+        String sanitized = name.trim();
+        sanitized = sanitized.replace("\n", "").replace("\r", "");
+        sanitized = COLOR_CODE.matcher(sanitized).replaceAll("");
+        sanitized = sanitized.replace("\u00A7", "");
+        sanitized = sanitized.replaceAll("[\\p{Cntrl}]", "");
+        if (sanitized.length() > MAX_PAGE_NAME_LENGTH) sanitized = sanitized.substring(0, MAX_PAGE_NAME_LENGTH);
+        sanitized = sanitized.trim();
+        return sanitized.isEmpty() ? null : sanitized;
+    }
 
     public java.util.Collection<Inventory> getInventories() { return java.util.List.copyOf(inventories.values()); }
 
@@ -1056,6 +1110,7 @@ public class InventoryData {
     public InventoryData migrateAs(UUID targetUuid) {
         InventoryData data = new InventoryData(targetUuid, database, false);
         data.flags = flags;
+        data.pageNames.putAll(pageNames);
         for (Map.Entry<Integer, Inventory> entry : inventories.entrySet()) {
             Inventory copy = data.createInventory(entry.getKey());
             copy.setContents(entry.getValue().getContents());
@@ -1065,8 +1120,11 @@ public class InventoryData {
     }
 
     private Inventory createInventory(int page) {
-        return Bukkit.createInventory(null, 54,
-                Chat.component(Chat.f("{0} &e- &cPage {1}", EnderChestPlus.enderChestTitlePrefix, page + 1)));
+        String name = pageNames.get(page);
+        String title = name == null
+                ? Chat.f("{0} &e- &cPage {1}", EnderChestPlus.enderChestTitlePrefix, page + 1)
+                : Chat.f("{0} &e- &f{1} &cPage {2}", EnderChestPlus.enderChestTitlePrefix, name, page + 1);
+        return Bukkit.createInventory(null, 54, Chat.component(title));
     }
 
     private static int positiveInt(String value) {

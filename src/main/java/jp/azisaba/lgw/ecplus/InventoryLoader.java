@@ -8,7 +8,9 @@ import lombok.RequiredArgsConstructor;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.AnvilInventory;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
@@ -23,6 +25,9 @@ public class InventoryLoader {
     private final DatabaseManager database;
     private final ConcurrentHashMap<UUID, InventoryData> invs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Player, UUID> adminLookingAt = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Player, PageRenameSession> renameSessions = new ConcurrentHashMap<>();
+
+    public record PageRenameSession(UUID targetUuid, int page) {}
 
     public static Inventory getMainInventory(InventoryData data, int index) {
         if (index < 0 || EnderChestPlus.MAX_MAIN_INVENTORY_PAGES - 1 < index) {
@@ -31,7 +36,8 @@ public class InventoryLoader {
         Inventory mainInv = Bukkit.createInventory(null, 9 * 6, Chat.component(EnderChestPlus.mainEnderChestTitle + Chat.f(" &a- &e{0}", index + 1)));
 
         for (int i = 0; i < mainInv.getSize(); i++) {
-            Inventory inv = data.getInventory((index * 54) + i);
+            int page = (index * 54) + i;
+            Inventory inv = data.getInventory(page);
             if (inv != null) {
                 double percentage = getPercentage(inv);
                 ItemStack item = null;
@@ -44,8 +50,18 @@ public class InventoryLoader {
                     item = getHighPane();
                 }
 
-                ItemHelper.setDisplayName(item, Chat.f("&aページ&e{0}&aを開く", (index * 54) + i + 1));
-                ItemHelper.setLore(item, getLore(inv, 5));
+                String pageName = data.getPageName(page);
+                String display = pageName == null
+                        ? Chat.f("&aページ&e{0}&aを開く", page + 1)
+                        : Chat.f("&aページ&e{0}&aを開く &7- &f{1}", page + 1, pageName);
+                ItemHelper.setDisplayName(item, display);
+
+                List<String> lore = getLore(inv, 4);
+                if (pageName != null) {
+                    lore.add(Chat.f("&7名前: &f{0}", pageName));
+                }
+                lore.add(Chat.f("&7左クリック: 開く / 右クリック: 名前変更"));
+                ItemHelper.setLore(item, lore);
                 mainInv.setItem(i, item);
             } else {
                 ItemStack item = getBuyPane((index * 54) + i);
@@ -397,6 +413,40 @@ public class InventoryLoader {
 
     public UUID getLookingAt(Player p) {
         return adminLookingAt.get(p);
+    }
+
+    @SuppressWarnings("deprecation")
+    public void openRenameAnvil(Player p, UUID targetUuid, int page) {
+        InventoryData data = getInventoryData(targetUuid);
+        if (data == null) return;
+        renameSessions.put(p, new PageRenameSession(targetUuid, page));
+        InventoryView view = p.openAnvil(p.getLocation(), true);
+        if (!(view.getTopInventory() instanceof AnvilInventory anvil)) {
+            renameSessions.remove(p);
+            return;
+        }
+        String current = data.getPageName(page);
+        anvil.setItem(0, createRenameInputItem(current));
+        // The anvil text field only picks the name up once the container has synced.
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            InventoryView open = p.isOnline() ? p.getOpenInventory() : null;
+            if (open != null && open.getTopInventory() == anvil) {
+                anvil.setItem(0, createRenameInputItem(current));
+            }
+        });
+    }
+
+    public PageRenameSession getRenameSession(Player p) {
+        return renameSessions.get(p);
+    }
+
+    public PageRenameSession finishRename(Player p) {
+        return renameSessions.remove(p);
+    }
+
+    private static ItemStack createRenameInputItem(String current) {
+        if (current == null) return new ItemStack(Material.NAME_TAG);
+        return ItemHelper.createItem(Material.NAME_TAG, current);
     }
 
     public boolean migrate(UUID from, UUID to) {
