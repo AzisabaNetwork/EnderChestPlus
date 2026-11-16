@@ -19,6 +19,8 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
     compileOnly("org.projectlombok:lombok:1.18.42")
     annotationProcessor("org.projectlombok:lombok:1.18.42")
+    // CrackShot の API (net.azisaba.crackshot.api) だけの jar。CrackShot の build/libs/CrackShot-<version>-api.jar をコピーする
+    compileOnly(files("libs/CrackShot-api.jar"))
     compileOnly("com.github.MilkBowl:VaultAPI:1.7") {
         exclude(group = "org.bukkit", module = "bukkit")
     }
